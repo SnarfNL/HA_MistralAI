@@ -284,6 +284,13 @@ A: Mistral AI processes requests via their servers. See their [privacy policy](h
 
 ## Release Notes
 
+### v0.2.2.2 — 2026-03-05
+- **Fixed:** `TypeError: Type is not JSON serializable: function` — voluptuous validators (`str`, `int`, `bool`, etc.) are Python callables and were ending up as values inside tool parameter schemas. Two-part fix:
+  1. `_format_tool` now uses `voluptuous_serialize.convert()` with HA's `cv.custom_serializer` — the same approach used by HA's own OpenAI and Gemini integrations — to produce a proper JSON Schema dict from `tool.parameters`.
+  2. `_sanitize` extended to handle non-serializable values (functions, types, voluptuous validators): anything that is not a JSON scalar, dict, or list is now converted to `repr(obj)` instead of being passed through, so a single unexpected value can never crash serialization.
+
+---
+
 ### v0.2.2.1 — 2026-03-05
 Community contributions merged with priority fix applied.
 

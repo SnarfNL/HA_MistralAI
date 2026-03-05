@@ -53,22 +53,31 @@ async def async_setup_entry(
 
 
 # ---------------------------------------------------------------------------
-# Payload sanitizer — THE KEY FIX
+# Payload sanitizer
 # ---------------------------------------------------------------------------
 
-def _sanitize(obj: Any) -> Any:
-    """Recursively convert all dict keys to str.
+#: JSON-safe scalar types that need no further processing
+_JSON_SCALARS = (str, int, float, bool, type(None))
 
-    This prevents the aiohttp/HA json_dumps OPT_NON_STR_KEYS error that
-    occurs when voluptuous schema objects (vol.Required, vol.Optional) or
-    other non-string types are used as dict keys — e.g. in tool parameter
-    schemas built from HA's LLM API.
+
+def _sanitize(obj: Any) -> Any:
+    """Recursively make obj fully JSON-serializable.
+
+    - Dict keys   → cast to str  (prevents OPT_NON_STR_KEYS)
+    - Dict values → recurse
+    - Lists       → recurse
+    - Scalars     → pass through
+    - Anything else (Python types, callables, vol validators, …)
+                  → repr string  (prevents "Type is not JSON serializable")
     """
     if isinstance(obj, dict):
         return {str(k): _sanitize(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_sanitize(i) for i in obj]
-    return obj
+    if isinstance(obj, _JSON_SCALARS):
+        return obj
+    # Anything non-serializable (function, type, voluptuous validator, …)
+    return repr(obj)
 
 
 # ---------------------------------------------------------------------------
@@ -78,24 +87,34 @@ def _sanitize(obj: Any) -> Any:
 def _format_tool(tool: llm.Tool) -> dict[str, Any]:
     """Convert an HA LLM tool to Mistral function-calling format.
 
-    tool.parameters may be a voluptuous Schema whose internal .schema dict
-    uses vol.Required/vol.Optional objects as keys. _sanitize() converts all
-    keys to plain strings so aiohttp can serialize the payload.
+    Uses voluptuous_serialize (the same path HA's OpenAI/Gemini integrations
+    take) to produce a proper JSON Schema dict from the voluptuous Schema in
+    tool.parameters.  Falls back to an empty schema on any error so a single
+    broken tool never crashes the whole conversation.
     """
-    raw_params: Any = {}
-    if hasattr(tool, "parameters"):
-        p = tool.parameters
-        # vol.Schema exposes its internals via .schema; plain dicts pass through
-        raw_params = p.schema if hasattr(p, "schema") else p
+    try:
+        import voluptuous_serialize
+        from homeassistant.helpers import config_validation as cv
 
-    return _sanitize({
+        parameters: dict[str, Any] = voluptuous_serialize.convert(
+            tool.parameters,
+            custom_serializer=cv.custom_serializer,
+        )
+    except Exception:  # pylint: disable=broad-except
+        _LOGGER.debug(
+            "Could not serialize tool parameters for '%s', using empty schema",
+            tool.name,
+        )
+        parameters = {}
+
+    return {
         "type": "function",
         "function": {
-            "name": tool.name,
-            "description": tool.description or "",
-            "parameters": raw_params,
+            "name": str(tool.name),
+            "description": str(tool.description or ""),
+            "parameters": parameters,  # already a plain JSON-schema dict
         },
-    })
+    }
 
 
 def _convert_chat_log_to_messages(
