@@ -283,6 +283,8 @@ A: Mistral AI processes requests via their servers. See their [privacy policy](h
 ---
 
 ## Release Notes
+### v0.2.2 — 2026-03-05
+- Modernize integration: native HA LLM API, web search, streaming, and reauth (by @joopdo)
 
 ### v0.2.1 — 2026-02-23
 - **Fixed:** Service confirmation responses are now fully dynamic and language-aware. The AI generates the confirmation text itself (in whatever language the user is speaking) via a `"confirmation"` field in the JSON action payload. The hardcoded English `_SERVICE_PAST_TENSE` dictionary has been removed entirely.
