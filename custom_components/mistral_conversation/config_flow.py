@@ -21,6 +21,7 @@ from .const import (
     CONF_PROMPT,
     CONF_STT_LANGUAGE,
     CONF_TEMPERATURE,
+    CONF_WEB_SEARCH,
     DEFAULT_CONTINUE_CONVERSATION,
     DEFAULT_CONTROL_HA,
     DEFAULT_MAX_TOKENS,
@@ -28,6 +29,7 @@ from .const import (
     DEFAULT_PROMPT,
     DEFAULT_STT_LANGUAGE,
     DEFAULT_TEMPERATURE,
+    DEFAULT_WEB_SEARCH,
     DOMAIN,
     MISTRAL_API_BASE,
 )
@@ -166,6 +168,11 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                         default=opts.get(
                             CONF_CONTINUE_CONVERSATION, DEFAULT_CONTINUE_CONVERSATION
                         ),
+                    ): selector.BooleanSelector(),
+                    # ── Web search (beta) ─────────────────────────────────
+                    vol.Optional(
+                        CONF_WEB_SEARCH,
+                        default=opts.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH),
                     ): selector.BooleanSelector(),
                     # ── STT language ──────────────────────────────────────
                     vol.Optional(

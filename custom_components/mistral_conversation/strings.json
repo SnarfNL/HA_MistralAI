@@ -30,6 +30,7 @@
           "max_tokens": "Maximum tokens in response",
           "control_ha": "Allow AI to control Home Assistant devices",
           "continue_conversation": "Enable conversations and listen to responses (Experimental)",
+          "web_search": "Enable web search (Beta)",
           "stt_language": "Speech recognition language (STT)"
         },
         "data_description": {
@@ -39,6 +40,7 @@
           "max_tokens": "Maximum length of the AI response in tokens.",
           "control_ha": "When enabled the AI can control exposed devices in your home via spoken or typed commands.",
           "continue_conversation": "When enabled, the assistant automatically keeps listening after a response that ends with a question. Uses the native HA continue_conversation flag. Experimental: behaviour may vary by satellite.",
+          "web_search": "When enabled, the AI can search the web for up-to-date information. Uses Mistral's Agents API (beta). Requires a model that supports agents (mistral-medium-latest or mistral-large-latest).",
           "stt_language": "Language for Voxtral speech-to-text. Select 'Auto-detect' to let Voxtral determine the language automatically."
         }
       }

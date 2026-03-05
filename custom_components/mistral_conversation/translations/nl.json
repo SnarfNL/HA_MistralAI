@@ -30,6 +30,7 @@
           "max_tokens": "Maximaal tokens in antwoord",
           "control_ha": "Laat AI Home Assistant bedienen",
           "continue_conversation": "Gesprekken inschakelen en luisteren naar antwoorden (Experimenteel)",
+          "web_search": "Webzoeken inschakelen (Beta)",
           "stt_language": "Spraakherkenning taal (STT)"
         },
         "data_description": {
@@ -39,6 +40,7 @@
           "max_tokens": "Maximale lengte van het AI-antwoord in tokens.",
           "control_ha": "Als ingeschakeld kan de AI blootgestelde apparaten bedienen via gesproken of getypte opdrachten.",
           "continue_conversation": "Als ingeschakeld blijft de assistent automatisch luisteren na een antwoord dat eindigt met een vraag. Gebruikt de native HA continue_conversation vlag. Experimenteel: gedrag kan per satellite verschillen.",
+          "web_search": "Als ingeschakeld kan de AI het web doorzoeken voor actuele informatie. Gebruikt Mistral's Agents API (beta). Vereist een model dat agents ondersteunt (mistral-medium-latest of mistral-large-latest).",
           "stt_language": "Taal voor Voxtral spraakherkenning. Laat leeg voor automatische detectie."
         }
       }

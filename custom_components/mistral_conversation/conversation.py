@@ -22,18 +22,21 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    AGENT_CAPABLE_MODELS,
     CONF_CONTINUE_CONVERSATION,
     CONF_CONTROL_HA,
     CONF_MAX_TOKENS,
     CONF_MODEL,
     CONF_PROMPT,
     CONF_TEMPERATURE,
+    CONF_WEB_SEARCH,
     DEFAULT_CONTINUE_CONVERSATION,
     DEFAULT_CONTROL_HA,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_PROMPT,
     DEFAULT_TEMPERATURE,
+    DEFAULT_WEB_SEARCH,
     DOMAIN,
     MISTRAL_API_BASE,
 )
@@ -234,6 +237,7 @@ class MistralConversationEntity(ConversationEntity):
     async def _process(self, user_input: ConversationInput) -> ConversationResult:
         opts = self._entry.options
         control_ha = opts.get(CONF_CONTROL_HA, DEFAULT_CONTROL_HA)
+        web_search = opts.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH)
         continue_conversation_enabled = opts.get(
             CONF_CONTINUE_CONVERSATION, DEFAULT_CONTINUE_CONVERSATION
         )
@@ -258,30 +262,41 @@ class MistralConversationEntity(ConversationEntity):
                 "For information requests or general conversation, reply normally in plain text."
             )
 
-        # --- Build message history ----------------------------------------
-        history = self._history.get(conv_id, [])
-        messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(history)
-        messages.append({"role": "user", "content": user_input.text})
-
-        # --- Call Mistral API (streaming) ---------------------------------
         model = opts.get(CONF_MODEL, DEFAULT_MODEL)
         max_tokens = int(opts.get(CONF_MAX_TOKENS, DEFAULT_MAX_TOKENS))
         temperature = max(0.0, min(1.0, float(opts.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE))))
 
-        raw_reply = await self._stream_chat(
-            payload={
-                "model": model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "stream": True,
-            },
-            conv_id=conv_id,
-            language=user_input.language,
-        )
+        # --- Choose API path: Conversations (web search) or Chat Completions
+        if web_search and any(model.startswith(m) for m in AGENT_CAPABLE_MODELS):
+            raw_reply = await self._conversations_chat(
+                model=model,
+                system_prompt=system_prompt,
+                user_text=user_input.text,
+                conv_id=conv_id,
+                language=user_input.language,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        else:
+            # --- Build message history ------------------------------------
+            history = self._history.get(conv_id, [])
+            messages = [{"role": "system", "content": system_prompt}]
+            messages.extend(history)
+            messages.append({"role": "user", "content": user_input.text})
 
-        # _stream_chat returns a ConversationResult directly on error
+            raw_reply = await self._stream_chat(
+                payload={
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "stream": True,
+                },
+                conv_id=conv_id,
+                language=user_input.language,
+            )
+
+        # _stream_chat / _conversations_chat return ConversationResult on error
         if isinstance(raw_reply, ConversationResult):
             return raw_reply
 
@@ -289,6 +304,7 @@ class MistralConversationEntity(ConversationEntity):
         reply = await self._maybe_execute_service(raw_reply, user_input, control_ha)
 
         # --- Update rolling history (max 20 turns = 40 messages) ----------
+        history = self._history.get(conv_id, [])
         updated_history = list(history)
         updated_history.append({"role": "user", "content": user_input.text})
         updated_history.append({"role": "assistant", "content": raw_reply})
@@ -307,6 +323,135 @@ class MistralConversationEntity(ConversationEntity):
             conversation_id=conv_id,
             continue_conversation=should_continue,
         )
+
+    # ------------------------------------------------------------------
+    # Agents / Conversations API for web search
+    # ------------------------------------------------------------------
+    async def _ensure_web_search_agent(self, model: str, system_prompt: str) -> str:
+        """Create (or reuse) a Mistral Agent with web_search enabled."""
+        runtime = self._runtime
+        if runtime.web_search_agent_id:
+            return runtime.web_search_agent_id
+
+        payload = {
+            "model": model,
+            "name": "HA Mistral Web Search",
+            "description": "Home Assistant conversation agent with web search",
+            "instructions": system_prompt,
+            "tools": [{"type": "web_search"}],
+            "completion_args": {
+                "temperature": 0.3,
+                "top_p": 0.95,
+            },
+        }
+        async with runtime.session.post(
+            f"{MISTRAL_API_BASE}/agents",
+            headers=runtime.headers,
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as resp:
+            if resp.status >= 400:
+                body = await resp.text()
+                raise HomeAssistantError(
+                    f"Failed to create Mistral web-search agent: {resp.status} {body}"
+                )
+            data = await resp.json()
+            agent_id = data["id"]
+            runtime.web_search_agent_id = agent_id
+            _LOGGER.debug("Created Mistral web-search agent: %s", agent_id)
+            return agent_id
+
+    async def _conversations_chat(
+        self,
+        model: str,
+        system_prompt: str,
+        user_text: str,
+        conv_id: str,
+        language: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> str | ConversationResult:
+        """Use the Mistral Conversations API (beta) with web search."""
+        runtime = self._runtime
+        try:
+            agent_id = await self._ensure_web_search_agent(model, system_prompt)
+
+            # Check if we have an existing Mistral conversation_id for this HA conv
+            mistral_conv_id = self._history.get(f"_ws_conv_{conv_id}")
+
+            if mistral_conv_id:
+                # Continue existing conversation
+                url = f"{MISTRAL_API_BASE}/conversations/{mistral_conv_id}"
+                payload = {"inputs": user_text}
+            else:
+                # Start new conversation
+                url = f"{MISTRAL_API_BASE}/conversations"
+                payload = {
+                    "agent_id": agent_id,
+                    "inputs": user_text,
+                }
+
+            async with runtime.session.post(
+                url,
+                headers=runtime.headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=90),
+            ) as resp:
+                if resp.status == 401:
+                    raise HomeAssistantError("Invalid Mistral AI API key")
+                if resp.status == 429:
+                    raise HomeAssistantError("Mistral AI rate limit exceeded")
+                if resp.status >= 400:
+                    body = await resp.text()
+                    _LOGGER.error(
+                        "Mistral Conversations API HTTP %s: %s", resp.status, body
+                    )
+                    raise HomeAssistantError(
+                        f"Mistral Conversations API error {resp.status}: {body}"
+                    )
+                data = await resp.json()
+
+            # Store the Mistral conversation_id for follow-ups
+            new_conv_id = data.get("conversation_id") or data.get("id")
+            if new_conv_id:
+                self._history[f"_ws_conv_{conv_id}"] = new_conv_id
+
+            # Extract text from the response outputs
+            return self._extract_conversation_text(data)
+
+        except (aiohttp.ClientError, HomeAssistantError) as err:
+            _LOGGER.error("Mistral Conversations API request failed: %s", err)
+            intent_response = intent.IntentResponse(language=language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                f"Sorry, I could not reach Mistral AI: {err}",
+            )
+            return ConversationResult(
+                response=intent_response, conversation_id=conv_id
+            )
+
+    @staticmethod
+    def _extract_conversation_text(data: dict) -> str:
+        """Extract plain text from a Conversations API response.
+
+        The response contains 'outputs' — a list of entries. Message entries
+        have 'content' which is either a string or a list of chunks with
+        type 'text' or 'tool_reference'. We concatenate the text chunks.
+        """
+        parts: list[str] = []
+        for output in data.get("outputs", []):
+            # Only look at message outputs (skip tool.execution entries)
+            if output.get("type") not in ("message.output", None):
+                if output.get("type") == "tool.execution":
+                    continue
+            content = output.get("content")
+            if isinstance(content, str):
+                parts.append(content)
+            elif isinstance(content, list):
+                for chunk in content:
+                    if isinstance(chunk, dict) and chunk.get("type") == "text":
+                        parts.append(chunk.get("text", ""))
+        return "".join(parts).strip() or data.get("message", "No response from Mistral.")
 
     # ------------------------------------------------------------------
     # Streaming HTTP call (Optimization #4)

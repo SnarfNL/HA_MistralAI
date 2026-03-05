@@ -11,6 +11,7 @@ CONF_MAX_TOKENS = "max_tokens"
 CONF_TEMPERATURE = "temperature"
 CONF_CONTROL_HA = "control_ha"
 CONF_CONTINUE_CONVERSATION = "continue_conversation"
+CONF_WEB_SEARCH = "web_search"
 CONF_STT_LANGUAGE = "stt_language"
 
 # ---------------------------------------------------------------------------
@@ -21,6 +22,7 @@ DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.7          # Mistral range: 0.0–1.0
 DEFAULT_CONTROL_HA = True
 DEFAULT_CONTINUE_CONVERSATION = False
+DEFAULT_WEB_SEARCH = False
 DEFAULT_STT_LANGUAGE = ""          # empty = Voxtral auto-detect
 
 DEFAULT_PROMPT = (
@@ -38,8 +40,16 @@ CHAT_MODELS = [
     "ministral-8b-latest",    # Best for HA: fast, great instruction following, low cost
     "ministral-3b-latest",    # Ultra-fast, lightweight, simple commands
     "mistral-small-latest",   # Balanced: speed + quality
+    "mistral-medium-latest",  # Required for Agents API (web search)
     "mistral-large-latest",   # Most capable, best for complex reasoning
     "open-mistral-nemo",      # Open-source, compact
+]
+
+# Models that support the Agents/Conversations API (required for web search)
+AGENT_CAPABLE_MODELS = [
+    "mistral-medium-latest",
+    "mistral-medium-2505",
+    "mistral-large-latest",
 ]
 
 # ---------------------------------------------------------------------------

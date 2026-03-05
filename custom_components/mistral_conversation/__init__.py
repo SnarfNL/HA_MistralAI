@@ -30,6 +30,8 @@ class MistralRuntimeData:
     # Cached entity-context string; invalidated by state listener
     entity_context: str | None = field(default=None)
     entity_context_unsub: object | None = field(default=None)
+    # Cached Mistral Agent ID for web-search conversations
+    web_search_agent_id: str | None = field(default=None)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
