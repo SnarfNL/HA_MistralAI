@@ -7,15 +7,14 @@ from typing import Any
 import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.const import CONF_API_KEY
+from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import selector
+from homeassistant.helpers import llm, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CHAT_MODELS,
     CONF_CONTINUE_CONVERSATION,
-    CONF_CONTROL_HA,
     CONF_MAX_TOKENS,
     CONF_MODEL,
     CONF_PROMPT,
@@ -23,7 +22,6 @@ from .const import (
     CONF_TEMPERATURE,
     CONF_WEB_SEARCH,
     DEFAULT_CONTINUE_CONVERSATION,
-    DEFAULT_CONTROL_HA,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_PROMPT,
@@ -77,6 +75,42 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> FlowResult:
+        """Handle reauth when API key becomes invalid."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Dialog to re-enter the API key."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            error = await self._test_api_key(user_input[CONF_API_KEY])
+            if error:
+                errors["base"] = error
+            else:
+                return self.async_update_reload_and_abort(
+                    self._get_reauth_entry(),
+                    data_updates={CONF_API_KEY: user_input[CONF_API_KEY]},
+                )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_API_KEY): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
     async def _test_api_key(self, api_key: str) -> str | None:
         session = async_get_clientsession(self.hass)
         try:
@@ -110,9 +144,18 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         if user_input is not None:
+            # Clean up empty LLM API selection
+            if not user_input.get(CONF_LLM_HASS_API):
+                user_input.pop(CONF_LLM_HASS_API, None)
             return self.async_create_entry(title="", data=user_input)
 
         opts = self.config_entry.options
+
+        # Build LLM API options list
+        hass_apis = [
+            selector.SelectOptionDict(label=api.name, value=api.id)
+            for api in llm.async_get_apis(self.hass)
+        ]
 
         return self.async_show_form(
             step_id="init",
@@ -133,6 +176,15 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                         CONF_PROMPT,
                         default=opts.get(CONF_PROMPT, DEFAULT_PROMPT),
                     ): selector.TemplateSelector(),
+                    # ── LLM API (Home Assistant device control) ───────────
+                    vol.Optional(
+                        CONF_LLM_HASS_API,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=hass_apis,
+                            multiple=True,
+                        )
+                    ),
                     # ── Temperature ───────────────────────────────────────
                     vol.Optional(
                         CONF_TEMPERATURE,
@@ -157,11 +209,6 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                             mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
-                    # ── HA control ────────────────────────────────────────
-                    vol.Optional(
-                        CONF_CONTROL_HA,
-                        default=opts.get(CONF_CONTROL_HA, DEFAULT_CONTROL_HA),
-                    ): selector.BooleanSelector(),
                     # ── Continue conversation (experimental) ──────────────
                     vol.Optional(
                         CONF_CONTINUE_CONVERSATION,

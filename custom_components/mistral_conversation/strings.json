@@ -8,6 +8,13 @@
         "data": {
           "api_key": "API Key"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with Mistral AI",
+        "description": "Your API key is no longer valid. Please enter a new one.",
+        "data": {
+          "api_key": "API Key"
+        }
       }
     },
     "error": {
@@ -16,7 +23,8 @@
       "unknown": "Unexpected error. Check the Home Assistant logs for details."
     },
     "abort": {
-      "already_configured": "Mistral AI Conversation is already configured."
+      "already_configured": "Mistral AI Conversation is already configured.",
+      "reauth_successful": "Re-authentication successful."
     }
   },
   "options": {
@@ -26,9 +34,9 @@
         "data": {
           "model": "AI model",
           "prompt": "System prompt",
+          "llm_hass_api": "Control Home Assistant",
           "temperature": "Temperature (creativity)",
           "max_tokens": "Maximum tokens in response",
-          "control_ha": "Allow AI to control Home Assistant devices",
           "continue_conversation": "Enable conversations and listen to responses (Experimental)",
           "web_search": "Enable web search (Beta)",
           "stt_language": "Speech recognition language (STT)"
@@ -36,9 +44,9 @@
         "data_description": {
           "model": "Which Mistral model to use. Ministral-8b is recommended for home automation commands: fast, cost-effective and great at instruction-following.",
           "prompt": "Instructions for the AI. Supports Jinja2 templates with {{ ha_name }}, {{ now() }} etc.",
+          "llm_hass_api": "Select which Home Assistant APIs the AI can use to control your devices. 'Assist' exposes the same entities as the built-in voice assistant.",
           "temperature": "0 = deterministic, 1 = creative. Mistral range: 0.0–1.0.",
           "max_tokens": "Maximum length of the AI response in tokens.",
-          "control_ha": "When enabled the AI can control exposed devices in your home via spoken or typed commands.",
           "continue_conversation": "When enabled, the assistant automatically keeps listening after a response that ends with a question. Uses the native HA continue_conversation flag. Experimental: behaviour may vary by satellite.",
           "web_search": "When enabled, the AI can search the web for up-to-date information. Uses Mistral's Agents API (beta). Requires a model that supports agents (mistral-medium-latest or mistral-large-latest).",
           "stt_language": "Language for Voxtral speech-to-text. Select 'Auto-detect' to let Voxtral determine the language automatically."

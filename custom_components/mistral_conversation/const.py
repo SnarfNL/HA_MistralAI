@@ -61,3 +61,6 @@ STT_MODEL = "voxtral-mini-latest"
 # API
 # ---------------------------------------------------------------------------
 MISTRAL_API_BASE = "https://api.mistral.ai/v1"
+
+# Max tool-call round-trips to prevent infinite loops
+MAX_TOOL_ITERATIONS = 10

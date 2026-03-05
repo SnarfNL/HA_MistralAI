@@ -8,7 +8,7 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -50,8 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             if resp.status == 401:
-                _LOGGER.error("Invalid Mistral AI API key")
-                return False
+                raise ConfigEntryAuthFailed("Invalid Mistral AI API key")
             resp.raise_for_status()
     except aiohttp.ClientError as err:
         raise ConfigEntryNotReady(f"Cannot connect to Mistral AI: {err}") from err
