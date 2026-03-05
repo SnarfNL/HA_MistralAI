@@ -185,7 +185,7 @@ async def _async_stream_delta(
 # Entity
 # ---------------------------------------------------------------------------
 
-class MistralConversationEntity(ConversationEntity, conversation.AbstractConversationAgent):
+class MistralConversationEntity(ConversationEntity):
     """Mistral AI conversation agent entity."""
 
     _attr_has_entity_name = True
@@ -319,55 +319,6 @@ class MistralConversationEntity(ConversationEntity, conversation.AbstractConvers
                 break
 
         return conversation.async_get_result_from_chat_log(user_input, chat_log)
-
-    # ------------------------------------------------------------------
-    # Legacy API (< 2024.6) — redirect to new path
-    # ------------------------------------------------------------------
-    async def async_process(self, user_input: ConversationInput) -> ConversationResult:
-        """Legacy entry point — create a minimal chat_log and delegate."""
-        # On older HA versions, _async_handle_message won't be called.
-        # Fall back to a simple non-tool-calling path.
-        return await self._legacy_process(user_input)
-
-    async def _legacy_process(self, user_input: ConversationInput) -> ConversationResult:
-        """Simple non-chat_log fallback for older HA versions."""
-        opts = self._entry.options
-        runtime = self._runtime
-        model = opts.get(CONF_MODEL, DEFAULT_MODEL)
-        max_tokens = int(opts.get(CONF_MAX_TOKENS, DEFAULT_MAX_TOKENS))
-        temperature = max(0.0, min(1.0, float(opts.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE))))
-
-        messages = [
-            {"role": "system", "content": opts.get(CONF_PROMPT, "You are a helpful assistant.")},
-            {"role": "user", "content": user_input.text},
-        ]
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
-        try:
-            async with runtime.session.post(
-                f"{MISTRAL_API_BASE}/chat/completions",
-                headers=runtime.headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                if resp.status >= 400:
-                    body = await resp.text()
-                    raise HomeAssistantError(f"Mistral API error {resp.status}: {body}")
-                data = await resp.json()
-                reply = data["choices"][0]["message"]["content"].strip()
-        except aiohttp.ClientError as err:
-            raise HomeAssistantError(f"Cannot reach Mistral AI: {err}") from err
-
-        intent_response = intent.IntentResponse(language=user_input.language)
-        intent_response.async_set_speech(reply)
-        return ConversationResult(
-            response=intent_response,
-            conversation_id=user_input.conversation_id or "legacy",
-        )
 
     # ------------------------------------------------------------------
     # Agents / Conversations API for web search
