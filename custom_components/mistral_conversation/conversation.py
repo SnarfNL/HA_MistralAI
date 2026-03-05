@@ -185,7 +185,7 @@ async def _async_stream_delta(
 # Entity
 # ---------------------------------------------------------------------------
 
-class MistralConversationEntity(ConversationEntity):
+class MistralConversationEntity(ConversationEntity, conversation.AbstractConversationAgent):
     """Mistral AI conversation agent entity."""
 
     _attr_has_entity_name = True
