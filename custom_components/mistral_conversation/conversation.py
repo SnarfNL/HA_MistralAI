@@ -378,6 +378,12 @@ class MistralConversationEntity(ConversationEntity):
         for _iteration in range(MAX_TOOL_ITERATIONS):
             messages = _convert_chat_log_to_messages(chat_log)
 
+            _LOGGER.warning(
+                "Mistral request iteration=%d, messages=%s",
+                _iteration,
+                json.dumps([{"role": m["role"], "has_tool_calls": "tool_calls" in m, "tool_call_id": m.get("tool_call_id")} for m in messages], default=str),
+            )
+
             # Build payload — _sanitize ensures ALL keys are strings
             payload: dict[str, Any] = _sanitize({
                 "model": model,
