@@ -148,6 +148,20 @@ def _convert_chat_log_to_messages(
 
         elif isinstance(content, conversation.AssistantContent):
             if content.tool_calls:
+                # Check if ALL tool calls have matching results
+                all_have_results = all(
+                    tc.id in tool_results for tc in content.tool_calls
+                )
+                if not all_have_results:
+                    # Skip this assistant+tool_calls block — results are missing
+                    # (stale conversation history). Include as plain text instead.
+                    if content.content:
+                        messages.append({
+                            "role": "assistant",
+                            "content": str(content.content),
+                        })
+                    continue
+
                 # Assistant message with tool calls — no text content
                 msg: dict[str, Any] = {
                     "role": "assistant",
@@ -171,18 +185,17 @@ def _convert_chat_log_to_messages(
 
                 # Immediately append matching tool results in order
                 for tc in content.tool_calls:
-                    result = tool_results.get(tc.id)
-                    if result:
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": _to_mistral_id(str(result.tool_call_id)),
-                            "name": str(result.tool_name),
-                            "content": json.dumps(
-                                _sanitize(result.tool_result)
-                                if isinstance(result.tool_result, (dict, list))
-                                else result.tool_result
-                            ),
-                        })
+                    result = tool_results[tc.id]
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": _to_mistral_id(str(result.tool_call_id)),
+                        "name": str(result.tool_name),
+                        "content": json.dumps(
+                            _sanitize(result.tool_result)
+                            if isinstance(result.tool_result, (dict, list))
+                            else result.tool_result
+                        ),
+                    })
             else:
                 # Regular assistant message (no tool calls)
                 messages.append({
@@ -377,12 +390,6 @@ class MistralConversationEntity(ConversationEntity):
         # --- Standard path: chat completions with tool-call loop ---------
         for _iteration in range(MAX_TOOL_ITERATIONS):
             messages = _convert_chat_log_to_messages(chat_log)
-
-            _LOGGER.warning(
-                "Mistral request iteration=%d, messages=%s",
-                _iteration,
-                json.dumps([{"role": m["role"], "has_tool_calls": "tool_calls" in m, "tool_call_id": m.get("tool_call_id")} for m in messages], default=str),
-            )
 
             # Build payload — _sanitize ensures ALL keys are strings
             payload: dict[str, Any] = _sanitize({
