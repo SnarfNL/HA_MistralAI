@@ -312,6 +312,14 @@ A: Mistral AI processes requests via their servers. See their [privacy policy](h
 
 ## Release Notes
 
+### v0.3.1.1 — 2026-04-09
+- **Fixed:** Mistral TTS returned HTTP 400 `Invalid model` — corrected model name from `mistral-tts-latest` to `voxtral-mini-tts-2603`.
+- **Fixed:** TTS API returns base64-encoded audio in a JSON `audio_data` field, not raw bytes — the response is now decoded correctly via `base64.b64decode()`.
+- **Fixed:** Voice parameter renamed from `voice` to `voice_id` to match the Mistral API spec.
+- **Updated:** Voice list replaced with actual Mistral TTS voices in `language_name_style` format (e.g. `gb_oliver_excited`). New default: `s3_rachel`. Added voices for EN-GB, EN-US, FR, DE, ES, NL, IT, PT.
+
+---
+
 ### v0.3.1 — 2026-04-09
 - **Fixed (HA 2026.4):** `TypeError: can only concatenate str (not "list") to str` — HA 2026.4 changed `chat_log.async_add_delta_content_stream` to expect the generator to yield plain types directly: `str` for text deltas, `llm.ToolInput` for completed tool calls. Our generator was still yielding wrapper dicts (`{"content": ..., "tool_calls": [...]}`), causing HA to attempt concatenating a list onto a string. Fixed `_async_stream_delta` to yield `str` and `llm.ToolInput` objects directly. Tool calls are still buffered until all arguments are streamed before being yielded.
 - **Added:** Text-to-speech (TTS) platform using Mistral TTS (`mistral-tts-latest`) via `/v1/audio/speech`. Returns MP3 audio. Registers as a third separate HA device alongside Conversation and STT.

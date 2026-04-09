@@ -24,7 +24,7 @@ DEFAULT_TEMPERATURE = 0.7          # Mistral range: 0.0–1.0
 DEFAULT_CONTINUE_CONVERSATION = False
 DEFAULT_WEB_SEARCH = False
 DEFAULT_STT_LANGUAGE = ""          # empty = Voxtral auto-detect
-DEFAULT_TTS_VOICE = "nova"
+DEFAULT_TTS_VOICE = "s3_rachel"
 
 DEFAULT_PROMPT = (
     "You are a helpful voice assistant for a smart home called {{ ha_name }}.\n"
@@ -61,16 +61,23 @@ STT_MODEL = "voxtral-mini-latest"
 # ---------------------------------------------------------------------------
 # TTS
 # ---------------------------------------------------------------------------
-TTS_MODEL = "mistral-tts-latest"
+TTS_MODEL = "voxtral-mini-tts-2603"
 
-# Available voices — ordered from neutral/natural to expressive
+# Available voices — format: {language}_{name}_{style}
+# See https://docs.mistral.ai/capabilities/audio_generation for the full list
 TTS_VOICES = [
-    "nova",       # Neutral, clear — good default for home automation
-    "alloy",      # Warm, conversational
-    "echo",       # Balanced, slightly deeper
-    "fable",      # Expressive, British accent
-    "onyx",       # Deep, authoritative
-    "shimmer",    # Soft, friendly
+    "s3_rachel",          # EN – Rachel, neutral (recommended default)
+    "gb_oliver_excited",  # EN-GB – Oliver, excited
+    "gb_oliver_calm",     # EN-GB – Oliver, calm
+    "us_emma_calm",       # EN-US – Emma, calm
+    "us_john_calm",       # EN-US – John, calm
+    "fr_lucille_friendly",# FR – Lucille, friendly
+    "fr_pierre_calm",     # FR – Pierre, calm
+    "de_anna_calm",       # DE – Anna, calm
+    "es_mateo_calm",      # ES – Mateo, calm
+    "nl_lars_calm",       # NL – Lars, calm
+    "it_giulia_calm",     # IT – Giulia, calm
+    "pt_ines_calm",       # PT – Inês, calm
 ]
 
 # ---------------------------------------------------------------------------

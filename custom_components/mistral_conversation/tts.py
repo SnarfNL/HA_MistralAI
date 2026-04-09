@@ -85,7 +85,10 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     def async_get_supported_voices(self, language: str) -> list[Voice]:
         """Return all available Mistral TTS voices."""
-        return [Voice(voice_id=v, name=v.replace("-", " ").title()) for v in TTS_VOICES]
+        return [
+            Voice(voice_id=v, name=v.replace("_", " ").title())
+            for v in TTS_VOICES
+        ]
 
     async def async_get_tts_audio(
         self,
@@ -101,7 +104,8 @@ class MistralTTSEntity(TextToSpeechEntity):
         payload = {
             "model": TTS_MODEL,
             "input": message,
-            "voice": voice,
+            "voice_id": voice,
+            "response_format": "mp3",
         }
 
         runtime = self._runtime
@@ -125,14 +129,17 @@ class MistralTTSEntity(TextToSpeechEntity):
                     raise HomeAssistantError(
                         f"Mistral TTS error {resp.status}: {body}"
                     )
-                audio_bytes = await resp.read()
+                # API returns JSON with base64-encoded audio in audio_data field
+                data = await resp.json()
+                audio_b64 = data.get("audio_data", "")
+                if not audio_b64:
+                    raise HomeAssistantError("Mistral TTS returned empty audio_data")
+                import base64
+                audio_bytes = base64.b64decode(audio_b64)
 
         except aiohttp.ClientError as err:
             _LOGGER.error("Mistral TTS request failed: %s", err)
             raise HomeAssistantError(f"Cannot reach Mistral AI: {err}") from err
-
-        if not audio_bytes:
-            raise HomeAssistantError("Mistral TTS returned empty audio")
 
         _LOGGER.debug(
             "Mistral TTS: synthesised %d bytes (voice=%s)", len(audio_bytes), voice
