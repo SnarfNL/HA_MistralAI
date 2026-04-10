@@ -51,7 +51,7 @@
           "continue_conversation": "Quand activé, l'assistant continue automatiquement d'écouter après une réponse qui finit sur une question. Utilise le signal continue_conversation natif à HA. Expérimental : le comportement peut varier par satellite.",
           "web_search": "Quand activé, l'IA peut chercher sur internet pour des informations à jour. Utilise l'API Agents de Mistral (beta). Requiert un modèle qui prend en charge les agents (mistral-medium-latest ou mistral-large-latest).",
           "stt_language": "Langue utilisée pour la reconnaissance vocale (STT) de Voxtral. Selectionnez 'Auto-detect' Pour laisser Voxtral déterminer la langue de lui-même.",
-          "tts_voice": "Voix utilisée par la transcription vocale de Mistral. 'en_paul_neutral' est neutre en anglais et fonctionne bien pour la domotique. 'fr_marie_neutral' est son équivalent français."
+          "tts_voice": "Voix par défaut utilisée par Mistral TTS, si aucune n'est configurée dans les paramètres de l'assistant."
         }
       }
     }
