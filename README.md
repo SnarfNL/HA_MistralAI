@@ -269,10 +269,6 @@ When the integration is installed, a **Mistral AI TTS** entity is registered aut
 In **Settings → Devices & Services → Mistral AI Conversation → Configure**, choose from the available voices.
 The available voices are retrieved dynamically. Currently there are only voices for EN, GB and FR available. 
 
-### Using TTS in automations
-
-
-
 <p align=right>(<a href=#readme-top>back to top</a>)</p>
 ---
 
