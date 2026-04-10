@@ -24,8 +24,6 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    CONF_STT_LANGUAGE,
-    DEFAULT_STT_LANGUAGE,
     DOMAIN,
     MISTRAL_API_BASE,
     STT_MODEL,
@@ -33,9 +31,9 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# BCP-47 code → display name (shown in the config dropdown)
+# BCP-47 code → display name (exposed via supported_languages so HA can
+# show a language picker in the Voice Assistants dialog)
 LANGUAGE_OPTIONS: list[tuple[str, str]] = [
-    ("",   "Auto-detect"),
     ("af", "Afrikaans"),
     ("ar", "Arabic"),
     ("az", "Azerbaijani"),
@@ -108,7 +106,16 @@ async def async_setup_entry(
 
 
 class MistralSTTEntity(SpeechToTextEntity):
-    """Mistral AI / Voxtral speech-to-text — separate device from conversation entity."""
+    """Mistral AI / Voxtral speech-to-text — separate device from conversation entity.
+
+    Language selection is handled entirely by the HA Voice Assistants dialog
+    (Settings → Voice Assistants → Speech-to-text language). HA passes the
+    selected language via SpeechMetadata.language; no duplicate setting is
+    needed in the integration options.
+
+    If no language is selected in the voice assistant (metadata.language is
+    empty), Voxtral uses automatic language detection.
+    """
 
     _attr_has_entity_name = True
     _attr_name = "Mistral AI STT (Voxtral)"
@@ -132,7 +139,8 @@ class MistralSTTEntity(SpeechToTextEntity):
 
     @property
     def supported_languages(self) -> list[str]:
-        return [code for code, _ in LANGUAGE_OPTIONS if code]
+        """Expose supported languages so HA can show the language picker."""
+        return [code for code, _ in LANGUAGE_OPTIONS]
 
     @property
     def supported_formats(self) -> list[AudioFormats]:
@@ -159,7 +167,12 @@ class MistralSTTEntity(SpeechToTextEntity):
         metadata: SpeechMetadata,
         stream: AsyncIterable[bytes],
     ) -> SpeechResult:
-        """Collect raw PCM from HA pipeline, wrap in WAV, transcribe via Voxtral."""
+        """Collect raw PCM from HA pipeline, wrap in WAV, transcribe via Voxtral.
+
+        Language comes from metadata.language, which HA populates from the
+        voice assistant pipeline language setting. If empty, Voxtral will
+        automatically detect the spoken language.
+        """
         pcm_data = b""
         async for chunk in stream:
             pcm_data += chunk
@@ -168,12 +181,16 @@ class MistralSTTEntity(SpeechToTextEntity):
             _LOGGER.warning("STT: received empty audio stream")
             return SpeechResult("", SpeechResultState.ERROR)
 
+        # Language is set in the Voice Assistants dialog; empty = auto-detect
+        lang_code = (metadata.language or "").strip()
+
         _LOGGER.debug(
-            "STT: %d bytes PCM — rate=%s channels=%s bits=%s",
+            "STT: %d bytes PCM — rate=%s channels=%s bits=%s lang=%s",
             len(pcm_data),
             metadata.sample_rate,
             metadata.channel,
             metadata.bit_rate,
+            lang_code or "auto",
         )
 
         # HA always delivers raw PCM frames — always wrap in a proper WAV container
@@ -183,10 +200,6 @@ class MistralSTTEntity(SpeechToTextEntity):
             channels=int(metadata.channel),
             sample_width=int(metadata.bit_rate) // 8,
         )
-
-        lang_code = (
-            self._entry.options.get(CONF_STT_LANGUAGE, DEFAULT_STT_LANGUAGE) or ""
-        ).strip()
 
         runtime = self.hass.data[DOMAIN][self._entry.entry_id]
         try:

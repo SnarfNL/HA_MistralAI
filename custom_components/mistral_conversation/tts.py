@@ -1,12 +1,12 @@
 """Text-to-Speech platform for Mistral AI."""
 from __future__ import annotations
 
+import base64
 import logging
 from typing import Any
 
 import aiohttp
 from homeassistant.components.tts import (
-    ATTR_AUDIO_OUTPUT,
     TextToSpeechEntity,
     TtsAudioType,
     Voice,
@@ -39,7 +39,16 @@ async def async_setup_entry(
 
 
 class MistralTTSEntity(TextToSpeechEntity):
-    """Mistral AI text-to-speech entity."""
+    """Mistral AI text-to-speech entity.
+
+    Voice selection priority (highest to lowest):
+      1. Voice Assistants dialog (Settings → Voice Assistants → Text-to-speech
+         voice). HA passes this selection via options["voice"] in each call.
+      2. Integration default (Settings → Devices & Services → Configure →
+         Text-to-speech voice). Used as fallback when no voice is chosen in
+         the Voice Assistants dialog or when TTS is called from an automation
+         without an explicit voice option.
+    """
 
     _attr_has_entity_name = True
     _attr_name = "Mistral AI TTS"
@@ -71,7 +80,7 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     @property
     def supported_languages(self) -> list[str]:
-        """Mistral TTS supports all languages the model knows; expose as wildcard."""
+        """Languages exposed to HA; Mistral TTS handles all of these natively."""
         return ["en", "nl", "fr", "de", "es", "it", "pt", "pl", "ru", "ja", "zh"]
 
     @property
@@ -80,11 +89,12 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     @property
     def default_options(self) -> dict[str, Any]:
+        """Return the integration-configured default voice as fallback."""
         voice = self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
         return {"voice": voice}
 
     def async_get_supported_voices(self, language: str) -> list[Voice]:
-        """Return all available Mistral TTS voices."""
+        """Return all available Mistral TTS voices for the Voice Assistants dialog."""
         return [
             Voice(voice_id=v, name=v.replace("_", " ").title())
             for v in TTS_VOICES
@@ -96,7 +106,11 @@ class MistralTTSEntity(TextToSpeechEntity):
         language: str,
         options: dict[str, Any],
     ) -> TtsAudioType:
-        """Synthesise speech via the Mistral audio/speech endpoint."""
+        """Synthesise speech via the Mistral audio/speech endpoint.
+
+        Voice priority: options["voice"] (from Voice Assistants dialog) wins
+        over the integration default (CONF_TTS_VOICE).
+        """
         voice = options.get("voice") or self._entry.options.get(
             CONF_TTS_VOICE, DEFAULT_TTS_VOICE
         )
@@ -129,12 +143,11 @@ class MistralTTSEntity(TextToSpeechEntity):
                     raise HomeAssistantError(
                         f"Mistral TTS error {resp.status}: {body}"
                     )
-                # API returns JSON with base64-encoded audio in audio_data field
+                # Mistral returns JSON with base64-encoded MP3 in audio_data
                 data = await resp.json()
                 audio_b64 = data.get("audio_data", "")
                 if not audio_b64:
                     raise HomeAssistantError("Mistral TTS returned empty audio_data")
-                import base64
                 audio_bytes = base64.b64decode(audio_b64)
 
         except aiohttp.ClientError as err:
@@ -144,5 +157,4 @@ class MistralTTSEntity(TextToSpeechEntity):
         _LOGGER.debug(
             "Mistral TTS: synthesised %d bytes (voice=%s)", len(audio_bytes), voice
         )
-        # Mistral returns MP3 by default
         return "mp3", audio_bytes

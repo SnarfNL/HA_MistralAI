@@ -18,7 +18,6 @@ from .const import (
     CONF_MAX_TOKENS,
     CONF_MODEL,
     CONF_PROMPT,
-    CONF_STT_LANGUAGE,
     CONF_TEMPERATURE,
     CONF_TTS_VOICE,
     CONF_WEB_SEARCH,
@@ -26,7 +25,6 @@ from .const import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_PROMPT,
-    DEFAULT_STT_LANGUAGE,
     DEFAULT_TEMPERATURE,
     DEFAULT_TTS_VOICE,
     DEFAULT_WEB_SEARCH,
@@ -227,20 +225,10 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                         CONF_WEB_SEARCH,
                         default=opts.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH),
                     ): selector.BooleanSelector(),
-                    # ── STT language ──────────────────────────────────────
-                    vol.Optional(
-                        CONF_STT_LANGUAGE,
-                        default=opts.get(CONF_STT_LANGUAGE, DEFAULT_STT_LANGUAGE),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(value=code, label=name)
-                                for code, name in LANGUAGE_OPTIONS
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    # ── TTS voice ─────────────────────────────────────────
+                    # ── TTS voice (fallback default) ──────────────────────
+                    # Primary voice selection is in Settings → Voice Assistants.
+                    # This setting is used as fallback when no voice is chosen
+                    # there, or when TTS is called directly from an automation.
                     vol.Optional(
                         CONF_TTS_VOICE,
                         default=opts.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE),
