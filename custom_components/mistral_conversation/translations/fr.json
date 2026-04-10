@@ -1,0 +1,59 @@
+{
+  "title": "Mistral AI Conversation",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Se connecter à Mistral AI",
+        "description": "Saisissez votre clé d'API Mistral. Créez en une sur [console.mistral.ai]({api_key_url}).",
+        "data": {
+          "api_key": "Clé API"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Se ré-identifier avec Mistral AI",
+        "description": "Votre clé d'API n'est plus valide. Merci d'en saisir une nouvelle.",
+        "data": {
+          "api_key": "Clé API"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter. Vérifiez votre connexion internet.",
+      "invalid_auth": "Clé d'API invalide. Merci de vérifier sur console.mistral.ai.",
+      "unknown": "Erreur imprévue. Vérifiez les logs de Home Assistant pour plus de détails"
+    },
+    "abort": {
+      "already_configured": "Mistral AI Conversation est déjà configuré.",
+      "reauth_successful": "Ré-identification effectuée."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Paramètres de Mistral AI Conversation",
+        "data": {
+          "model": "Modèle d'IA",
+          "prompt": "Prompt système",
+          "llm_hass_api": "Contrôler Home Assistant",
+          "temperature": "Température (créativité)",
+          "max_tokens": "Nombre maximum de tokens dans la réponse",
+          "continue_conversation": "Activer les conversations et écouter les réponses (Expérimental)",
+          "web_search": "Activer la recherche sur le web (Beta)",
+          "stt_language": "Langage de la reconnaissance vocale (STT)",
+          "tts_voice": "Voix de la transcription vocale (TTS)"
+        },
+        "data_description": {
+          "model": "Quel modèle Mistral utiliser. Ministral-8b est recommandé pour les commandes de domotique : il est rapide, d'un bon rapport qualité/prix et bon pour le suivi d'instructions.",
+          "prompt": "Instructions pour l'IA. Supporte les modèles Jinja2 avec {{ ha_name }}, {{ now() }} etc.",
+          "llm_hass_api": "Sélectionnez quelles APIs Home Assistant l'IA peut utiliser pour contrôler vos périphériques. 'Assist' présente les mêmes entités que l'assistant vocal inclus dans HA.",
+          "temperature": "0 = déterministe, 1 = créatif. Plage de Mistral : 0.0–1.0.",
+          "max_tokens": "Longueur maximum de la réponse de l'IA en tokens.",
+          "continue_conversation": "Quand activé, l'assistant continue automatiquement d'écouter après une réponse qui finit sur une question. Utilise le signal continue_conversation natif à HA. Expérimental : le comportement peut varier par satellite.",
+          "web_search": "Quand activé, l'IA peut chercher sur internet pour des informations à jour. Utilise l'API Agents de Mistral (beta). Requiert un modèle qui prend en charge les agents (mistral-medium-latest ou mistral-large-latest).",
+          "stt_language": "Langue utilisée pour la reconnaissance vocale (STT) de Voxtral. Selectionnez 'Auto-detect' Pour laisser Voxtral déterminer la langue de lui-même.",
+          "tts_voice": "Voix utilisée par la transcription vocale de Mistral. 'en_paul_neutral' est neutre en anglais et fonctionne bien pour la domotique. 'fr_marie_neutral' est son équivalent français."
+        }
+      }
+    }
+  }
+}
