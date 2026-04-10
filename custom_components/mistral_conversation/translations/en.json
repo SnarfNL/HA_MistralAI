@@ -51,7 +51,7 @@
           "continue_conversation": "When enabled, the assistant automatically keeps listening after a response that ends with a question. Uses the native HA continue_conversation flag. Experimental: behaviour may vary by satellite.",
           "web_search": "When enabled, the AI can search the web for up-to-date information. Uses Mistral's Agents API (beta). Requires a model that supports agents (mistral-medium-latest or mistral-large-latest).",
           "stt_language": "Language for Voxtral speech-to-text. Select 'Auto-detect' to let Voxtral determine the language automatically.",
-          "tts_voice": "Voice used by Mistral TTS. 'Nova' is neutral and works well for home automation. All voices support any language."
+          "tts_voice": "Default voice used by Mistral TTS, if none is configured in the assistant settings."
         }
       }
     }
