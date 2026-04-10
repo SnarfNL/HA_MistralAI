@@ -266,22 +266,8 @@ When the integration is installed, a **Mistral AI TTS** entity is registered aut
 
 ### Selecting a voice
 
-In **Settings → Devices & Services → Mistral AI Conversation → Configure**, choose from the available voices:
-
-| Voice | Character |
-|---|---|
-| nova | Neutral, clear — recommended default |
-| alloy | Warm, conversational |
-| echo | Balanced, slightly deeper |
-| fable | Expressive, British accent |
-| onyx | Deep, authoritative |
-| shimmer | Soft, friendly |
-
-All voices support all languages.
-
-### Using TTS in automations
-
-
+In **Settings → Devices & Services → Mistral AI Conversation → Configure**, choose from the available voices.
+The available voices are retrieved dynamically. Currently there are only voices for EN, GB and FR available. 
 
 <p align=right>(<a href=#readme-top>back to top</a>)</p>
 ---
@@ -311,6 +297,13 @@ A: Mistral AI processes requests via their servers. See their [privacy policy](h
 ---
 
 ## Release Notes
+
+### v0.3.6 — 2026-04-10
+- **Changed** :Setting default voices and language has been clarified
+
+### v0.3.5 — 2026-04-10
+- **Fixed:** : Update available TTS voices and set new default by @kalon33 in #12
+- **Changed:** :Translate in French by @kalon33 in #13
 
 ### v0.3.1.2 — 2026-04-09
 - **Fixed:** TTS voice list corrected — previous lists contained non-existent voice IDs. Replaced with the complete official list of 20 voices from Mistral TTS documentation, covering English (casual, cheerful, neutral), French, Spanish, German, Italian, Portuguese, Dutch, Arabic, and Hindi. Default changed to `neutral_female`.
