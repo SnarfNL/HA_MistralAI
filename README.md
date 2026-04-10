@@ -295,7 +295,7 @@ A: Make sure you performed a full restart (not just reload) and cleared any `__p
 A: Check the HA logs for the full error body. A common cause is an invalid model name or a temperature value outside 0.0–1.0.
 
 **Q: Can I use TTS with this integration?**
-A: Mistral has no TTS API. Use Piper (local, free), Google TTS, or ElevenLabs as your TTS provider in the voice assistant pipeline.
+A: Now that Mistral has a TTS model, yes. Please refer to Text-to-speech (TTS) section for details.
 
 **Q: How much does it cost?**
 A: With `ministral-8b-latest` and typical home use, expect less than €1–2 per month. Voxtral STT adds ~€0.003/minute. See [mistral.ai/pricing](https://mistral.ai/pricing/).
