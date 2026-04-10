@@ -58,42 +58,26 @@ async def async_setup_entry(
 _JSON_SCALARS = (str, int, float, bool, type(None))
 
 def _sanitize(obj: Any) -> Any:
-    """Recursively make obj fully JSON-serializable.
-
-    - Dict keys   → cast to str  (prevents OPT_NON_STR_KEYS)
-    - Dict values → recurse
-    - Lists       → recurse
-    - Scalars     → pass through
-    - Anything else (Python types, callables, vol validators, …)
-                  → repr string  (prevents "Type is not JSON serializable")
-    """
+    """Recursively make obj fully JSON-serializable."""
     if isinstance(obj, dict):
         return {str(k): _sanitize(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_sanitize(i) for i in obj]
     if isinstance(obj, _JSON_SCALARS):
         return obj
-    # Anything non-serializable (function, type, voluptuous validator, …)
     return repr(obj)
 
 def _format_tool(tool: llm.Tool, custom_serializer: Any = None) -> dict[str, Any]:
-    """Convert an HA LLM tool to Mistral function-calling format.
-
-    Uses voluptuous_openapi.convert() to produce proper JSON Schema,
-    matching the pattern used by the official OpenAI and Anthropic
-    integrations.
-    """
+    """Convert an HA LLM tool to Mistral function-calling format."""
     try:
         from voluptuous_openapi import convert
-
         parameters = convert(tool.parameters, custom_serializer=custom_serializer)
-    except Exception:  # pylint: disable=broad-except
+    except Exception:
         _LOGGER.debug(
             "Could not serialize tool parameters for '%s', using empty schema",
             tool.name,
         )
         parameters = {"type": "object", "properties": {}}
-
     return {
         "type": "function",
         "function": {
@@ -104,57 +88,36 @@ def _format_tool(tool: llm.Tool, custom_serializer: Any = None) -> dict[str, Any
     }
 
 def _to_mistral_id(ha_id: str) -> str:
-    """Convert an HA tool_call ID to a Mistral-compatible 9-char alphanumeric ID.
-
-    Mistral requires tool_call IDs to be exactly 9 characters, a-z A-Z 0-9.
-    HA's chat_log uses 26-char ULIDs. We hash deterministically so the same
-    HA ID always maps to the same Mistral ID.
-    """
+    """Convert an HA tool_call ID to a Mistral-compatible 9-char alphanumeric ID."""
     import hashlib
     return hashlib.md5(ha_id.encode()).hexdigest()[:9]
 
 def _convert_chat_log_to_messages(
     chat_log: conversation.ChatLog,
 ) -> list[dict[str, Any]]:
-    """Convert HA ChatLog content into Mistral chat completions messages.
-
-    Mistral requires:
-    - Each assistant message with tool_calls must be followed by exactly
-      one tool result per tool_call, in order.
-    - An assistant message with tool_calls should not have text content.
-    """
+    """Convert HA ChatLog content into Mistral chat completions messages."""
     messages: list[dict[str, Any]] = []
-
-    # Collect tool results indexed by tool_call_id for pairing
     tool_results: dict[str, conversation.ToolResultContent] = {}
     for content in chat_log.content:
         if isinstance(content, conversation.ToolResultContent):
             tool_results[content.tool_call_id] = content
-
     for content in chat_log.content:
         if isinstance(content, conversation.SystemContent):
             messages.append({"role": "system", "content": str(content.content)})
-
         elif isinstance(content, conversation.UserContent):
             messages.append({"role": "user", "content": str(content.content)})
-
         elif isinstance(content, conversation.AssistantContent):
             if content.tool_calls:
-                # Check if ALL tool calls have matching results
                 all_have_results = all(
                     tc.id in tool_results for tc in content.tool_calls
                 )
                 if not all_have_results:
-                    # Skip this assistant+tool_calls block — results are missing
-                    # (stale conversation history). Include as plain text instead.
                     if content.content:
                         messages.append({
                             "role": "assistant",
                             "content": str(content.content),
                         })
                     continue
-
-                # Assistant message with tool calls — no text content
                 msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": "",
@@ -174,8 +137,6 @@ def _convert_chat_log_to_messages(
                     ],
                 }
                 messages.append(msg)
-
-                # Immediately append matching tool results in order
                 for tc in content.tool_calls:
                     result = tool_results[tc.id]
                     messages.append({
@@ -189,40 +150,42 @@ def _convert_chat_log_to_messages(
                         ),
                     })
             else:
-                # Regular assistant message (no tool calls)
                 messages.append({
                     "role": "assistant",
                     "content": str(content.content or ""),
                 })
-
-        # ToolResultContent is handled above paired with tool_calls
-        # Skip standalone tool results to avoid duplicates
-
     return messages
 
 async def _async_stream_delta(
     resp: aiohttp.ClientResponse,
-) -> AsyncGenerator[str | llm.ToolInput, None]:
-    """Parse SSE stream from Mistral and yield items for chat_log.
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Parse SSE stream from Mistral and yield dictionaries with 'role' key.
 
     HA 2026.4 changed async_add_delta_content_stream to expect the generator
-    to yield plain types directly, not wrapper dicts:
-      - str          → text content delta
-      - llm.ToolInput → a completed tool call
+    to yield dictionaries with the expected format, including a 'role' key.
 
-    Tool calls are buffered until all arguments have been streamed, then
-    yielded as complete ToolInput objects.
+    Mistral streams tool calls as fragments, which are buffered here and
+    yielded as a single dictionary with role='assistant' and tool_calls array.
     """
     buffer = b""
     current_tool_calls: dict[int, dict] = {}
 
-    async def _flush_tool_calls() -> AsyncGenerator[llm.ToolInput, None]:
+    async def _flush_tool_calls() -> AsyncGenerator[dict[str, Any], None]:
+        """Yield tool calls as a single dictionary with 'role' key."""
         for tc in current_tool_calls.values():
-            yield llm.ToolInput(
-                id=tc["id"],
-                tool_name=tc["name"],
-                tool_args=json.loads(tc["arguments"] or "{}"),
-            )
+            yield {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": tc["arguments"],
+                        },
+                    }
+                ],
+            }
         current_tool_calls.clear()
 
     async for raw_chunk in resp.content.iter_any():
@@ -235,8 +198,8 @@ async def _async_stream_delta(
                     continue
                 data_str = line_str[6:]
                 if data_str.strip() == "[DONE]":
-                    async for tool_input in _flush_tool_calls():
-                        yield tool_input
+                    async for msg in _flush_tool_calls():
+                        yield msg
                     return
                 try:
                     data = json.loads(data_str)
@@ -246,11 +209,9 @@ async def _async_stream_delta(
                 choice = data.get("choices", [{}])[0]
                 delta = choice.get("delta", {})
 
-                # Text delta — yield as plain string
                 if delta.get("content"):
-                    yield str(delta["content"])
+                    yield {"role": "assistant", "content": str(delta["content"])}
 
-                # Accumulate streaming tool call fragments
                 if delta.get("tool_calls"):
                     for tc_delta in delta["tool_calls"]:
                         idx = tc_delta.get("index", 0)
@@ -268,10 +229,9 @@ async def _async_stream_delta(
                         if tc_delta.get("function", {}).get("arguments"):
                             current_tool_calls[idx]["arguments"] += tc_delta["function"]["arguments"]
 
-                # Flush complete tool calls when finish_reason signals completion
                 if choice.get("finish_reason") in ("tool_calls", "stop") and current_tool_calls:
-                    async for tool_input in _flush_tool_calls():
-                        yield tool_input
+                    async for msg in _flush_tool_calls():
+                        yield msg
 
 # ---------------------------------------------------------------------------
 # Entity
@@ -311,9 +271,6 @@ class MistralConversationEntity(ConversationEntity):
             configuration_url="https://console.mistral.ai",
         )
 
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
     async def _async_handle_message(
         self,
         user_input: ConversationInput,
@@ -325,7 +282,6 @@ class MistralConversationEntity(ConversationEntity):
             CONF_CONTINUE_CONVERSATION, DEFAULT_CONTINUE_CONVERSATION
         )
 
-        # Let HA build system prompt and expose tools
         try:
             await chat_log.async_provide_llm_data(
                 user_input.as_llm_context(DOMAIN),
@@ -348,7 +304,6 @@ class MistralConversationEntity(ConversationEntity):
         temperature = max(0.0, min(1.0, float(opts.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE))))
         web_search = opts.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH)
 
-        # --- Web search path: use Agents/Conversations API ---------------
         if web_search and any(model.startswith(m) for m in AGENT_CAPABLE_MODELS):
             system_content = chat_log.content[0] if chat_log.content else None
             system_prompt = (
@@ -379,11 +334,8 @@ class MistralConversationEntity(ConversationEntity):
                     continue_conversation=should_continue,
                 )
 
-        # --- Standard path: chat completions with tool-call loop ---------
         for _iteration in range(MAX_TOOL_ITERATIONS):
             messages = _convert_chat_log_to_messages(chat_log)
-
-            # Build payload — _sanitize ensures ALL keys are strings
             payload: dict[str, Any] = _sanitize({
                 "model": model,
                 "messages": messages,
@@ -392,7 +344,7 @@ class MistralConversationEntity(ConversationEntity):
                 "stream": True,
             })
             if tools:
-                payload["tools"] = tools  # already sanitized by _format_tool
+                payload["tools"] = tools
                 payload["tool_choice"] = "auto"
 
             try:
@@ -410,7 +362,6 @@ class MistralConversationEntity(ConversationEntity):
 
         result = conversation.async_get_result_from_chat_log(user_input, chat_log)
 
-        # Apply continue_conversation flag if the reply ends with a question
         if continue_conversation_enabled:
             reply_text = result.response.speech.get("plain", {}).get("speech", "")
             if "?" in reply_text:
@@ -422,9 +373,6 @@ class MistralConversationEntity(ConversationEntity):
 
         return result
 
-    # ------------------------------------------------------------------
-    # Agents / Conversations API for web search
-    # ------------------------------------------------------------------
     async def _ensure_web_search_agent(self, model: str, system_prompt: str) -> str:
         """Create (or reuse) a Mistral Agent with web_search enabled."""
         runtime = self._runtime
@@ -507,16 +455,21 @@ class MistralConversationEntity(ConversationEntity):
                         parts.append(chunk.get("text", ""))
         return "".join(parts).strip() or data.get("message", "")
 
-    # ------------------------------------------------------------------
-    # Streaming HTTP + chat_log delta integration
-    # ------------------------------------------------------------------
     async def _stream_and_collect(
         self,
         payload: dict[str, Any],
         chat_log: conversation.ChatLog,
         user_input: ConversationInput,
     ) -> None:
-        """POST to Mistral, stream deltas into chat_log."""
+        """POST to Mistral, stream deltas into chat_log.
+
+        This method streams deltas from Mistral, parses them, and appends
+        them to the chat log. The deltas are expected to be dictionaries
+        with a 'role' key, matching the Home Assistant core format.
+
+        This resolves the TypeError in the core code where it expects
+        a delta to be a dictionary with a 'role' key, not a llm.ToolInput object.
+        """
         runtime = self._runtime
         try:
             async with runtime.session.post(
@@ -539,15 +492,11 @@ class MistralConversationEntity(ConversationEntity):
                         f"Mistral API error {resp.status}: {body}"
                     )
 
-                # Stream and handle both str and llm.ToolInput objects
                 async for delta in chat_log.async_add_delta_content_stream(
                     user_input.agent_id,
                     _async_stream_delta(resp),
                 ):
-                    if isinstance(delta, str):
-                        await chat_log.async_append_content(delta)
-                    elif isinstance(delta, llm.ToolInput):
-                        await chat_log.async_append_content(delta)
+                    await chat_log.async_append_content(delta)
 
         except aiohttp.ClientError as err:
             _LOGGER.error("Mistral AI request failed: %s", err)
