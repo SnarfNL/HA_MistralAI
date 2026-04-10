@@ -51,7 +51,7 @@
           "continue_conversation": "Als ingeschakeld blijft de assistent automatisch luisteren na een antwoord dat eindigt met een vraag. Gebruikt de native HA continue_conversation vlag. Experimenteel: gedrag kan per satellite verschillen.",
           "web_search": "Als ingeschakeld kan de AI het web doorzoeken voor actuele informatie. Gebruikt Mistral's Agents API (beta). Vereist een model dat agents ondersteunt (mistral-medium-latest of mistral-large-latest).",
           "stt_language": "Taal voor Voxtral spraakherkenning. Laat leeg voor automatische detectie.",
-          "tts_voice": "Stem voor Mistral TTS. 'Nova' is neutraal en werkt goed voor home automation. Alle stemmen ondersteunen elke taal."
+          "tts_voice": "De standaardstem die door Mistral TTS wordt gebruikt als er geen stem is geconfigureerd in de assistentinstellingen."
         }
       }
     }
