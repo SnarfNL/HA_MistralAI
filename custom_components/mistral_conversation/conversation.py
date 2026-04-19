@@ -56,42 +56,25 @@ async def async_setup_entry(
 # Payload sanitizer
 # ---------------------------------------------------------------------------
 
-#: JSON-safe scalar types that need no further processing
-_JSON_SCALARS = (str, int, float, bool, type(None))
-
-
 def _sanitize(obj: Any) -> Any:
-    """Recursively make obj fully JSON-serializable.
-
-    - Dict keys   → cast to str  (prevents OPT_NON_STR_KEYS)
-    - Dict values → recurse
-    - Lists       → recurse
-    - Scalars     → pass through
-    - Anything else (Python types, callables, vol validators, …)
-                  → repr string  (prevents "Type is not JSON serializable")
-    """
+    """Recursively make obj fully JSON-serializable."""
     if isinstance(obj, dict):
         return {str(k): _sanitize(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_sanitize(i) for i in obj]
-    if isinstance(obj, _JSON_SCALARS):
+    if isinstance(obj, (str, int, float, bool, type(None))):
         return obj
-    # Anything non-serializable (function, type, voluptuous validator, …)
     return repr(obj)
 
 
-
+# ---------------------------------------------------------------------------
+# Tool helpers
+# ---------------------------------------------------------------------------
 
 def _format_tool(tool: llm.Tool, custom_serializer: Any = None) -> dict[str, Any]:
-    """Convert an HA LLM tool to Mistral function-calling format.
-
-    Uses voluptuous_openapi.convert() to produce proper JSON Schema,
-    matching the pattern used by the official OpenAI and Anthropic
-    integrations.
-    """
+    """Convert an HA LLM tool to Mistral function-calling format."""
     try:
         from voluptuous_openapi import convert
-
         parameters = convert(tool.parameters, custom_serializer=custom_serializer)
     except Exception:  # pylint: disable=broad-except
         _LOGGER.debug(
@@ -111,12 +94,7 @@ def _format_tool(tool: llm.Tool, custom_serializer: Any = None) -> dict[str, Any
 
 
 def _to_mistral_id(ha_id: str) -> str:
-    """Convert an HA tool_call ID to a Mistral-compatible 9-char alphanumeric ID.
-
-    Mistral requires tool_call IDs to be exactly 9 characters, a-z A-Z 0-9.
-    HA's chat_log uses 26-char ULIDs. We hash deterministically so the same
-    HA ID always maps to the same Mistral ID.
-    """
+    """Convert an HA tool_call ID to a Mistral-compatible 9-char alphanumeric ID."""
     import hashlib
     return hashlib.md5(ha_id.encode()).hexdigest()[:9]
 
@@ -124,20 +102,14 @@ def _to_mistral_id(ha_id: str) -> str:
 def _convert_chat_log_to_messages(
     chat_log: conversation.ChatLog,
 ) -> list[dict[str, Any]]:
-    """Convert HA ChatLog content into Mistral chat completions messages.
-
-    Mistral requires:
-    - Each assistant message with tool_calls must be followed by exactly
-      one tool result per tool_call, in order.
-    - An assistant message with tool_calls should not have text content.
-    """
+    """Convert HA ChatLog content into Mistral chat completions messages."""
     messages: list[dict[str, Any]] = []
 
-    # Collect tool results indexed by tool_call_id for pairing
-    tool_results: dict[str, conversation.ToolResultContent] = {}
-    for content in chat_log.content:
-        if isinstance(content, conversation.ToolResultContent):
-            tool_results[content.tool_call_id] = content
+    tool_results: dict[str, conversation.ToolResultContent] = {
+        c.tool_call_id: c
+        for c in chat_log.content
+        if isinstance(c, conversation.ToolResultContent)
+    }
 
     for content in chat_log.content:
         if isinstance(content, conversation.SystemContent):
@@ -148,21 +120,12 @@ def _convert_chat_log_to_messages(
 
         elif isinstance(content, conversation.AssistantContent):
             if content.tool_calls:
-                # Check if ALL tool calls have matching results
-                all_have_results = all(
-                    tc.id in tool_results for tc in content.tool_calls
-                )
+                all_have_results = all(tc.id in tool_results for tc in content.tool_calls)
                 if not all_have_results:
-                    # Skip this assistant+tool_calls block — results are missing
-                    # (stale conversation history). Include as plain text instead.
                     if content.content:
-                        messages.append({
-                            "role": "assistant",
-                            "content": str(content.content),
-                        })
+                        messages.append({"role": "assistant", "content": str(content.content)})
                     continue
 
-                # Assistant message with tool calls — no text content
                 msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": "",
@@ -183,54 +146,47 @@ def _convert_chat_log_to_messages(
                 }
                 messages.append(msg)
 
-                # Immediately append matching tool results in order
                 for tc in content.tool_calls:
-                    result = tool_results[tc.id]
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": _to_mistral_id(str(result.tool_call_id)),
-                        "name": str(result.tool_name),
-                        "content": json.dumps(
-                            _sanitize(result.tool_result)
-                            if isinstance(result.tool_result, (dict, list))
-                            else result.tool_result
-                        ),
-                    })
+                    if res := tool_results.get(tc.id):
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": _to_mistral_id(str(res.tool_call_id)),
+                            "name": str(res.tool_name),
+                            "content": json.dumps(
+                                _sanitize(res.tool_result)
+                                if isinstance(res.tool_result, (dict, list))
+                                else res.tool_result
+                            ),
+                        })
             else:
-                # Regular assistant message (no tool calls)
-                messages.append({
-                    "role": "assistant",
-                    "content": str(content.content or ""),
-                })
-
-        # ToolResultContent is handled above paired with tool_calls
-        # Skip standalone tool results to avoid duplicates
+                messages.append({"role": "assistant", "content": str(content.content or "")})
 
     return messages
 
 
+# ---------------------------------------------------------------------------
+# SSE stream parser
+# Yields str or llm.ToolInput directly — NOT wrapper dicts.
+# HA 2026.4+ requires plain types from async_add_delta_content_stream.
+# ---------------------------------------------------------------------------
+
 async def _async_stream_delta(
     resp: aiohttp.ClientResponse,
 ) -> AsyncGenerator[str | llm.ToolInput, None]:
-    """Parse SSE stream from Mistral and yield items for chat_log.
-
-    HA 2026.4 changed async_add_delta_content_stream to expect the generator
-    to yield plain types directly, not wrapper dicts:
-      - str          → text content delta
-      - llm.ToolInput → a completed tool call
-
-    Tool calls are buffered until all arguments have been streamed, then
-    yielded as complete ToolInput objects.
-    """
+    """Parse SSE stream from Mistral and yield str or llm.ToolInput directly."""
     buffer = b""
     current_tool_calls: dict[int, dict] = {}
 
-    async def _flush_tool_calls() -> AsyncGenerator[llm.ToolInput, None]:
+    async def _flush() -> AsyncGenerator[llm.ToolInput, None]:
         for tc in current_tool_calls.values():
+            try:
+                args = json.loads(tc["arguments"]) if tc["arguments"] else {}
+            except json.JSONDecodeError:
+                args = {}
             yield llm.ToolInput(
                 id=tc["id"],
                 tool_name=tc["name"],
-                tool_args=json.loads(tc["arguments"] or "{}"),
+                tool_args=args,
             )
         current_tool_calls.clear()
 
@@ -244,8 +200,8 @@ async def _async_stream_delta(
                     continue
                 data_str = line_str[6:]
                 if data_str.strip() == "[DONE]":
-                    async for tool_input in _flush_tool_calls():
-                        yield tool_input
+                    async for item in _flush():
+                        yield item
                     return
                 try:
                     data = json.loads(data_str)
@@ -255,11 +211,11 @@ async def _async_stream_delta(
                 choice = data.get("choices", [{}])[0]
                 delta = choice.get("delta", {})
 
-                # Text delta — yield as plain string
+                # Yield text as plain str
                 if delta.get("content"):
                     yield str(delta["content"])
 
-                # Accumulate streaming tool call fragments
+                # Accumulate tool call fragments
                 if delta.get("tool_calls"):
                     for tc_delta in delta["tool_calls"]:
                         idx = tc_delta.get("index", 0)
@@ -277,10 +233,10 @@ async def _async_stream_delta(
                         if tc_delta.get("function", {}).get("arguments"):
                             current_tool_calls[idx]["arguments"] += tc_delta["function"]["arguments"]
 
-                # Flush complete tool calls when finish_reason signals completion
+                # Flush when the model signals it's done with tool calls
                 if choice.get("finish_reason") in ("tool_calls", "stop") and current_tool_calls:
-                    async for tool_input in _flush_tool_calls():
-                        yield tool_input
+                    async for item in _flush():
+                        yield item
 
 
 # ---------------------------------------------------------------------------
@@ -321,9 +277,6 @@ class MistralConversationEntity(ConversationEntity):
             configuration_url="https://console.mistral.ai",
         )
 
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
     async def _async_handle_message(
         self,
         user_input: ConversationInput,
@@ -335,7 +288,6 @@ class MistralConversationEntity(ConversationEntity):
             CONF_CONTINUE_CONVERSATION, DEFAULT_CONTINUE_CONVERSATION
         )
 
-        # Let HA build system prompt and expose tools
         try:
             await chat_log.async_provide_llm_data(
                 user_input.as_llm_context(DOMAIN),
@@ -358,7 +310,7 @@ class MistralConversationEntity(ConversationEntity):
         temperature = max(0.0, min(1.0, float(opts.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE))))
         web_search = opts.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH)
 
-        # --- Web search path: use Agents/Conversations API ---------------
+        # --- Web search path: Agents/Conversations API -------------------
         if web_search and any(model.startswith(m) for m in AGENT_CAPABLE_MODELS):
             system_content = chat_log.content[0] if chat_log.content else None
             system_prompt = (
@@ -372,15 +324,11 @@ class MistralConversationEntity(ConversationEntity):
                     conv_id=chat_log.conversation_id,
                 )
             except HomeAssistantError as err:
-                _LOGGER.debug(
-                    "Web search failed, falling back to chat completions: %s", err
-                )
+                _LOGGER.debug("Web search failed, falling back to chat completions: %s", err)
                 ws_reply = None
 
             if ws_reply:
-                should_continue = (
-                    continue_conversation_enabled and "?" in ws_reply
-                )
+                should_continue = continue_conversation_enabled and "?" in ws_reply
                 intent_response = intent.IntentResponse(language=user_input.language)
                 intent_response.async_set_speech(ws_reply)
                 return ConversationResult(
@@ -391,18 +339,15 @@ class MistralConversationEntity(ConversationEntity):
 
         # --- Standard path: chat completions with tool-call loop ---------
         for _iteration in range(MAX_TOOL_ITERATIONS):
-            messages = _convert_chat_log_to_messages(chat_log)
-
-            # Build payload — _sanitize ensures ALL keys are strings
             payload: dict[str, Any] = _sanitize({
                 "model": model,
-                "messages": messages,
+                "messages": _convert_chat_log_to_messages(chat_log),
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "stream": True,
             })
             if tools:
-                payload["tools"] = tools  # already sanitized by _format_tool
+                payload["tools"] = tools
                 payload["tool_choice"] = "auto"
 
             try:
@@ -420,7 +365,6 @@ class MistralConversationEntity(ConversationEntity):
 
         result = conversation.async_get_result_from_chat_log(user_input, chat_log)
 
-        # Apply continue_conversation flag if the reply ends with a question
         if continue_conversation_enabled:
             reply_text = result.response.speech.get("plain", {}).get("speech", "")
             if "?" in reply_text:
@@ -449,9 +393,9 @@ class MistralConversationEntity(ConversationEntity):
             "tools": [{"type": "web_search"}],
             "completion_args": {"temperature": 0.3, "top_p": 0.95},
         })
-        async with runtime.session.post(
+        async with self._runtime.session.post(
             f"{MISTRAL_API_BASE}/agents",
-            headers=runtime.headers,
+            headers=self._runtime.headers,
             json=payload,
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
@@ -462,7 +406,7 @@ class MistralConversationEntity(ConversationEntity):
                 )
             data = await resp.json()
             agent_id = data["id"]
-            runtime.web_search_agent_id = agent_id
+            self._runtime.web_search_agent_id = agent_id
             _LOGGER.debug("Created Mistral web-search agent: %s", agent_id)
             return agent_id
 
