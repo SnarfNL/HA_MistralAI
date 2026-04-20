@@ -166,28 +166,50 @@ def _convert_chat_log_to_messages(
 
 # ---------------------------------------------------------------------------
 # SSE stream parser
-# Yields str or llm.ToolInput directly — NOT wrapper dicts.
-# HA 2026.4+ requires plain types from async_add_delta_content_stream.
+#
+# HA 2026.4 chat_log.async_add_delta_content_stream does:
+#   if "role" not in delta: ...
+# which means it ALWAYS expects dicts, never plain str/ToolInput.
+#
+# The previous "can only concatenate str (not list)" error was caused by
+# mixing content and tool_calls in a single dict. The fix is to always yield
+# them as SEPARATE dicts, never combined:
+#   {"content": "text string"}      — text delta
+#   {"tool_calls": [ToolInput(...)]} — completed tool call
 # ---------------------------------------------------------------------------
 
 async def _async_stream_delta(
     resp: aiohttp.ClientResponse,
-) -> AsyncGenerator[str | llm.ToolInput, None]:
-    """Parse SSE stream from Mistral and yield str or llm.ToolInput directly."""
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Parse SSE stream from Mistral and yield delta dicts for HA's chat_log.
+
+    Yields exactly one of:
+      {"content": str}                — text content delta
+      {"tool_calls": [llm.ToolInput]} — one completed tool call per yield
+
+    Never yields both keys in the same dict. HA 2026.4 does
+    `if "role" not in delta` on each item, so plain str/ToolInput objects
+    will raise TypeError — dicts are required.
+    """
     buffer = b""
     current_tool_calls: dict[int, dict] = {}
 
-    async def _flush() -> AsyncGenerator[llm.ToolInput, None]:
+    async def _flush() -> AsyncGenerator[dict[str, Any], None]:
+        """Yield each buffered tool call as its own dict and clear the buffer."""
         for tc in current_tool_calls.values():
             try:
                 args = json.loads(tc["arguments"]) if tc["arguments"] else {}
             except json.JSONDecodeError:
                 args = {}
-            yield llm.ToolInput(
-                id=tc["id"],
-                tool_name=tc["name"],
-                tool_args=args,
-            )
+            yield {
+                "tool_calls": [
+                    llm.ToolInput(
+                        id=tc["id"],
+                        tool_name=tc["name"],
+                        tool_args=args,
+                    )
+                ]
+            }
         current_tool_calls.clear()
 
     async for raw_chunk in resp.content.iter_any():
@@ -211,11 +233,11 @@ async def _async_stream_delta(
                 choice = data.get("choices", [{}])[0]
                 delta = choice.get("delta", {})
 
-                # Yield text as plain str
+                # Yield text delta — always a separate dict, never mixed with tool_calls
                 if delta.get("content"):
-                    yield str(delta["content"])
+                    yield {"content": str(delta["content"])}
 
-                # Accumulate tool call fragments
+                # Accumulate streaming tool call fragments
                 if delta.get("tool_calls"):
                     for tc_delta in delta["tool_calls"]:
                         idx = tc_delta.get("index", 0)
@@ -233,7 +255,7 @@ async def _async_stream_delta(
                         if tc_delta.get("function", {}).get("arguments"):
                             current_tool_calls[idx]["arguments"] += tc_delta["function"]["arguments"]
 
-                # Flush when the model signals it's done with tool calls
+                # Flush each completed tool call as its own dict
                 if choice.get("finish_reason") in ("tool_calls", "stop") and current_tool_calls:
                     async for item in _flush():
                         yield item
