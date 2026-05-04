@@ -45,7 +45,7 @@
         },
         "data_description": {
           "model": "Welk Mistral-model wordt gebruikt. Ministral-8b is aanbevolen voor home automation: snel, goedkoop en sterk in opdrachten uitvoeren.",
-          "prompt": "Instructies voor de AI. Ondersteunt Jinja2 templates met {{ ha_name }}, {{ now() }} etc.",
+          "prompt": "Instructies voor de AI. Ondersteunt Jinja2 templates — bijvoorbeeld de HA-instantienaam via ha_name, of de huidige datum via now(). Zie de README voor de volledige lijst met variabelen.",
           "llm_hass_api": "Selecteer welke Home Assistant API de AI mag gebruiken om apparaten te bedienen. 'Assist' stelt dezelfde entiteiten beschikbaar als de ingebouwde spraakassistent.",
           "temperature": "0 = deterministisch, 1 = creatief. Mistral bereik: 0.0–1.0.",
           "max_tokens": "Maximale lengte van het AI-antwoord in tokens.",

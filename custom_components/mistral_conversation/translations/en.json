@@ -45,7 +45,7 @@
         },
         "data_description": {
           "model": "Which Mistral model to use. Ministral-8b is recommended for home automation commands: fast, cost-effective and great at instruction-following.",
-          "prompt": "Instructions for the AI. Supports Jinja2 templates with {{ ha_name }}, {{ now() }} etc.",
+          "prompt": "Instructions for the AI. Supports Jinja2 templates — for example, the HA instance name via ha_name, or the current date via now(). See the README for the full list of variables.",
           "llm_hass_api": "Select which Home Assistant APIs the AI can use to control your devices. 'Assist' exposes the same entities as the built-in voice assistant.",
           "temperature": "0 = deterministic, 1 = creative. Mistral range: 0.0–1.0.",
           "max_tokens": "Maximum length of the AI response in tokens.",

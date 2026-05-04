@@ -45,7 +45,7 @@
         },
         "data_description": {
           "model": "Quel modèle Mistral utiliser. Ministral-8b est recommandé pour les commandes de domotique : il est rapide, d'un bon rapport qualité/prix et bon pour le suivi d'instructions.",
-          "prompt": "Instructions pour l'IA. Supporte les modèles Jinja2 avec {{ ha_name }}, {{ now() }} etc.",
+          "prompt": "Instructions pour l'IA. Supporte les modèles Jinja2 — par exemple, le nom de l'instance HA via ha_name, ou la date actuelle via now(). Voir le README pour la liste complète des variables.",
           "llm_hass_api": "Sélectionnez quelles APIs Home Assistant l'IA peut utiliser pour contrôler vos périphériques. 'Assist' présente les mêmes entités que l'assistant vocal inclus dans HA.",
           "temperature": "0 = déterministe, 1 = créatif. Plage de Mistral : 0.0–1.0.",
           "max_tokens": "Longueur maximum de la réponse de l'IA en tokens.",
