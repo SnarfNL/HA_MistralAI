@@ -113,7 +113,7 @@ TTS_VOICES = [
 # Cap on concurrently in-flight Mistral TTS requests (one per sentence).
 # Bounds memory and outbound concurrency if the LLM emits many sentences in
 # a burst.
-TTS_MAX_INFLIGHT_SENTENCES = 5
+TTS_MAX_INFLIGHT_SENTENCES = 2
 
 # Don't fire TTS for sentences shorter than this — avoids spamming the API
 # on stray "OK." or single-word fragments and waiting on TTFB for nothing.

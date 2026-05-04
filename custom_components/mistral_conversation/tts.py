@@ -19,11 +19,13 @@ Two operating modes selectable via integration options (CONF_TTS_MODE):
   ``batch``, ``async_stream_tts_audio`` also delegates here via the base
   class default implementation.
 """
+
 from __future__ import annotations
 
 import asyncio
 import base64
 import logging
+import time
 from typing import Any, AsyncGenerator
 
 import aiohttp
@@ -145,10 +147,7 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     def async_get_supported_voices(self, language: str) -> list[Voice]:
         """Return all available Mistral TTS voices for the Voice Assistants dialog."""
-        return [
-            Voice(voice_id=v, name=v.replace("_", " ").title())
-            for v in TTS_VOICES
-        ]
+        return [Voice(voice_id=v, name=v.replace("_", " ").title()) for v in TTS_VOICES]
 
     # ------------------------------------------------------------------
     # Batch path
@@ -167,9 +166,7 @@ class MistralTTSEntity(TextToSpeechEntity):
         Voice priority: options["voice"] (from Voice Assistants dialog) wins
         over the integration default (CONF_TTS_VOICE).
         """
-        voice = options.get("voice") or self._entry.options.get(
-            CONF_TTS_VOICE, DEFAULT_TTS_VOICE
-        )
+        voice = options.get("voice") or self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
 
         payload = {
             "model": TTS_MODEL,
@@ -194,11 +191,11 @@ class MistralTTSEntity(TextToSpeechEntity):
                     body = await resp.text()
                     _LOGGER.error(
                         "Mistral TTS HTTP %s — voice=%s body=%s",
-                        resp.status, voice, body,
+                        resp.status,
+                        voice,
+                        body,
                     )
-                    raise HomeAssistantError(
-                        f"Mistral TTS error {resp.status}: {body}"
-                    )
+                    raise HomeAssistantError(f"Mistral TTS error {resp.status}: {body}")
                 # Mistral returns JSON with base64-encoded MP3 in audio_data
                 data = await resp.json()
                 audio_b64 = data.get("audio_data", "")
@@ -212,16 +209,15 @@ class MistralTTSEntity(TextToSpeechEntity):
 
         _LOGGER.debug(
             "Mistral TTS (batch): synthesised %d bytes (voice=%s)",
-            len(audio_bytes), voice,
+            len(audio_bytes),
+            voice,
         )
         return "mp3", audio_bytes
 
     # ------------------------------------------------------------------
     # Streaming path
     # ------------------------------------------------------------------
-    async def async_stream_tts_audio(
-        self, request: TTSAudioRequest
-    ) -> TTSAudioResponse:
+    async def async_stream_tts_audio(self, request: TTSAudioRequest) -> TTSAudioResponse:
         """Stream WAV audio while the LLM is still generating its reply.
 
         For CONF_TTS_MODE == 'batch' we defer to the inherited default which
@@ -231,9 +227,7 @@ class MistralTTSEntity(TextToSpeechEntity):
         if mode == TTS_MODE_BATCH:
             return await super().async_stream_tts_audio(request)
 
-        voice = request.options.get("voice") or self._entry.options.get(
-            CONF_TTS_VOICE, DEFAULT_TTS_VOICE
-        )
+        voice = request.options.get("voice") or self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
 
         return TTSAudioResponse(
             extension="wav",
@@ -292,11 +286,11 @@ class MistralTTSEntity(TextToSpeechEntity):
                     async with sem:
                         _LOGGER.debug(
                             "TTS sentence %d START (drop_header=%s, %d chars)",
-                            idx, drop_header, len(text),
+                            idx,
+                            drop_header,
+                            len(text),
                         )
-                        await self._stream_one_sentence_into(
-                            text, voice, drop_header, inner
-                        )
+                        await self._stream_one_sentence_into(text, voice, drop_header, inner, idx=idx)
                         _LOGGER.debug("TTS sentence %d DONE", idx)
                 except asyncio.CancelledError:
                     raise
@@ -317,13 +311,9 @@ class MistralTTSEntity(TextToSpeechEntity):
                     if not token:
                         continue
                     token_buffer += token
-                    sentences, token_buffer = pop_complete_sentences(
-                        token_buffer, TTS_MIN_SENTENCE_CHARS
-                    )
+                    sentences, token_buffer = pop_complete_sentences(token_buffer, TTS_MIN_SENTENCE_CHARS)
                     for sentence in sentences:
-                        inner = await fetch_sentence(
-                            next_idx, sentence, drop_header=next_idx > 0
-                        )
+                        inner = await fetch_sentence(next_idx, sentence, drop_header=next_idx > 0)
                         await outer_q.put(inner)
                         next_idx += 1
                 # Flush any trailing text without a terminator. Skip if it
@@ -334,9 +324,7 @@ class MistralTTSEntity(TextToSpeechEntity):
                 # this is the last chance to emit whatever's left.
                 trailing = token_buffer.strip()
                 if trailing and has_speakable_content(trailing):
-                    inner = await fetch_sentence(
-                        next_idx, trailing, drop_header=next_idx > 0
-                    )
+                    inner = await fetch_sentence(next_idx, trailing, drop_header=next_idx > 0)
                     await outer_q.put(inner)
             finally:
                 await outer_q.put(None)
@@ -368,9 +356,7 @@ class MistralTTSEntity(TextToSpeechEntity):
                         # 4xx, network blip) shouldn't truncate the rest of
                         # the response. The worker has already logged the
                         # specifics at WARNING level.
-                        _LOGGER.warning(
-                            "Skipping sentence due to error: %s", item
-                        )
+                        _LOGGER.warning("Skipping sentence due to error: %s", item)
                         break
                     yield item
         finally:
@@ -401,6 +387,7 @@ class MistralTTSEntity(TextToSpeechEntity):
         voice: str,
         drop_header: bool,
         out_queue: asyncio.Queue,
+        idx: int | None = None,
     ) -> None:
         """POST one sentence and pump SSE-decoded audio bytes into *out_queue*.
 
@@ -408,6 +395,9 @@ class MistralTTSEntity(TextToSpeechEntity):
         decoded bytes regardless of how many SSE frames they span. This
         produces a continuous PCM tail that concatenates cleanly behind
         sentence 0's RIFF/WAVE header.
+
+        *idx* is purely for log correlation with the surrounding START/DONE
+        lines emitted by the worker; logic does not depend on it.
         """
         runtime = self._runtime
         payload = {
@@ -418,6 +408,8 @@ class MistralTTSEntity(TextToSpeechEntity):
             "stream": True,
         }
         bytes_skipped = 0
+        request_start = time.monotonic()
+        first_chunk_logged = False
         try:
             async with runtime.session.post(
                 f"{MISTRAL_API_BASE}/audio/speech",
@@ -433,16 +425,26 @@ class MistralTTSEntity(TextToSpeechEntity):
                     body = await resp.text()
                     _LOGGER.error(
                         "Mistral TTS HTTP %s — voice=%s body=%s",
-                        resp.status, voice, body,
+                        resp.status,
+                        voice,
+                        body,
                     )
-                    raise HomeAssistantError(
-                        f"Mistral TTS error {resp.status}: {body}"
-                    )
+                    raise HomeAssistantError(f"Mistral TTS error {resp.status}: {body}")
                 async for audio in iter_sse_audio_chunks(resp):
-                    if drop_header and bytes_skipped < TTS_WAV_HEADER_SIZE:
-                        skip = min(
-                            TTS_WAV_HEADER_SIZE - bytes_skipped, len(audio)
+                    if not first_chunk_logged:
+                        # Time from POST to first decoded audio bytes — the
+                        # actual TTFA contributed by Mistral. Logged before
+                        # the optional header-strip so it reflects what the
+                        # network delivered, not what we forwarded onward.
+                        _LOGGER.debug(
+                            "TTS sentence %s first audio chunk after %.3fs" " (%d decoded bytes)",
+                            idx if idx is not None else "?",
+                            time.monotonic() - request_start,
+                            len(audio),
                         )
+                        first_chunk_logged = True
+                    if drop_header and bytes_skipped < TTS_WAV_HEADER_SIZE:
+                        skip = min(TTS_WAV_HEADER_SIZE - bytes_skipped, len(audio))
                         audio = audio[skip:]
                         bytes_skipped += skip
                         if not audio:
