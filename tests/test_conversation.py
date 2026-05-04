@@ -142,6 +142,13 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
     async def _collect(self, resp: Any) -> list[dict[str, Any]]:
         return [item async for item in _async_stream_delta(resp)]
 
+    async def test_role_assistant_yielded_first(self) -> None:
+        """Every stream MUST start with {"role": "assistant"} — without this
+        HA's pipeline drops all content and tts_start_streaming never fires.
+        """
+        out = await self._collect(_FakeResponse([b"data: [DONE]\n\n"]))
+        self.assertEqual(out, [{"role": "assistant"}])
+
     async def test_plain_text_content(self) -> None:
         chunks = [
             _data_frame(_content_delta("Hello")),
@@ -149,7 +156,10 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
             b"data: [DONE]\n\n",
         ]
         out = await self._collect(_FakeResponse(chunks))
-        self.assertEqual(out, [{"content": "Hello"}, {"content": " world"}])
+        self.assertEqual(
+            out,
+            [{"role": "assistant"}, {"content": "Hello"}, {"content": " world"}],
+        )
 
     async def test_done_terminates(self) -> None:
         chunks = [
@@ -158,7 +168,7 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
             _data_frame(_content_delta("ignored")),
         ]
         out = await self._collect(_FakeResponse(chunks))
-        self.assertEqual(out, [{"content": "X"}])
+        self.assertEqual(out, [{"role": "assistant"}, {"content": "X"}])
 
     async def test_malformed_json_skipped(self) -> None:
         chunks = [
@@ -167,7 +177,7 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
             b"data: [DONE]\n\n",
         ]
         out = await self._collect(_FakeResponse(chunks))
-        self.assertEqual(out, [{"content": "ok"}])
+        self.assertEqual(out, [{"role": "assistant"}, {"content": "ok"}])
 
     async def test_frame_split_across_wire_chunks(self) -> None:
         full = (
@@ -177,7 +187,10 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
         )
         wire = [full[:5], full[5:20], full[20:50], full[50:]]
         out = await self._collect(_FakeResponse(wire))
-        self.assertEqual(out, [{"content": "Streaming"}, {"content": " works"}])
+        self.assertEqual(
+            out,
+            [{"role": "assistant"}, {"content": "Streaming"}, {"content": " works"}],
+        )
 
     async def test_tool_call_accumulation_and_flush(self) -> None:
         """Tool-call fragments span multiple deltas; flushed on finish_reason."""
@@ -189,10 +202,11 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
             b"data: [DONE]\n\n",
         ]
         out = await self._collect(_FakeResponse(chunks))
-        # Expect exactly one yielded dict with one ToolInput inside
-        self.assertEqual(len(out), 1)
-        self.assertIn("tool_calls", out[0])
-        tool_calls = out[0]["tool_calls"]
+        # Expect role marker, then exactly one yielded dict with one ToolInput
+        self.assertEqual(out[0], {"role": "assistant"})
+        self.assertEqual(len(out), 2)
+        self.assertIn("tool_calls", out[1])
+        tool_calls = out[1]["tool_calls"]
         self.assertEqual(len(tool_calls), 1)
         tc = tool_calls[0]
         self.assertEqual(tc.id, "c1")
@@ -207,7 +221,8 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
             b"data: [DONE]\n\n",
         ]
         out = await self._collect(_FakeResponse(chunks))
-        self.assertEqual(out[0]["tool_calls"][0].tool_args, {})
+        self.assertEqual(out[0], {"role": "assistant"})
+        self.assertEqual(out[1]["tool_calls"][0].tool_args, {})
 
     async def test_mixed_text_then_tool_call(self) -> None:
         """A text response followed by a tool call yields both, in order."""
@@ -219,11 +234,12 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
             b"data: [DONE]\n\n",
         ]
         out = await self._collect(_FakeResponse(chunks))
-        self.assertEqual(out[0], {"content": "Sure, "})
-        self.assertEqual(out[1], {"content": "calling: "})
-        self.assertEqual(len(out), 3)
-        self.assertEqual(out[2]["tool_calls"][0].tool_name, "lights_off")
-        self.assertEqual(out[2]["tool_calls"][0].tool_args, {})
+        self.assertEqual(out[0], {"role": "assistant"})
+        self.assertEqual(out[1], {"content": "Sure, "})
+        self.assertEqual(out[2], {"content": "calling: "})
+        self.assertEqual(len(out), 4)
+        self.assertEqual(out[3]["tool_calls"][0].tool_name, "lights_off")
+        self.assertEqual(out[3]["tool_calls"][0].tool_args, {})
 
 
 if __name__ == "__main__":
