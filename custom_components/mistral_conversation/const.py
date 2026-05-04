@@ -13,18 +13,25 @@ CONF_CONTINUE_CONVERSATION = "continue_conversation"
 CONF_WEB_SEARCH = "web_search"
 CONF_STT_LANGUAGE = "stt_language"
 CONF_TTS_VOICE = "tts_voice"
+CONF_TTS_MODE = "tts_mode"
 # Note: device control uses HA's native CONF_LLM_HASS_API from homeassistant.const
+
+# tts_mode values
+TTS_MODE_STREAM = "stream"
+TTS_MODE_BATCH = "batch"
+TTS_MODES = [TTS_MODE_STREAM, TTS_MODE_BATCH]
 
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
 DEFAULT_MODEL = "ministral-8b-latest"
 DEFAULT_MAX_TOKENS = 1024
-DEFAULT_TEMPERATURE = 0.7          # Mistral range: 0.0–1.0
+DEFAULT_TEMPERATURE = 0.7  # Mistral range: 0.0–1.0
 DEFAULT_CONTINUE_CONVERSATION = False
 DEFAULT_WEB_SEARCH = False
-DEFAULT_STT_LANGUAGE = ""          # empty = Voxtral auto-detect
+DEFAULT_STT_LANGUAGE = ""  # empty = Voxtral auto-detect
 DEFAULT_TTS_VOICE = "en_paul_neutral"
+DEFAULT_TTS_MODE = TTS_MODE_STREAM
 
 DEFAULT_PROMPT = (
     "You are a helpful voice assistant for a smart home called {{ ha_name }}.\n"
@@ -38,12 +45,12 @@ DEFAULT_PROMPT = (
 # Ordered by suitability for home automation (fast + instruction-following first)
 # ---------------------------------------------------------------------------
 CHAT_MODELS = [
-    "ministral-8b-latest",    # Best for HA: fast, great instruction following, low cost
-    "ministral-3b-latest",    # Ultra-fast, lightweight, simple commands
-    "mistral-small-latest",   # Balanced: speed + quality
+    "ministral-8b-latest",  # Best for HA: fast, great instruction following, low cost
+    "ministral-3b-latest",  # Ultra-fast, lightweight, simple commands
+    "mistral-small-latest",  # Balanced: speed + quality
     "mistral-medium-latest",  # Required for web search via Agents API
-    "mistral-large-latest",   # Most capable, best for complex reasoning
-    "open-mistral-nemo",      # Open-source, compact
+    "mistral-large-latest",  # Most capable, best for complex reasoning
+    "open-mistral-nemo",  # Open-source, compact
 ]
 
 # Models that support the Agents/Conversations API (required for web search)
@@ -93,8 +100,28 @@ TTS_VOICES = [
     "gb_oliver_curious",
     "gb_oliver_excited",
     "gb_oliver_neutral",
-    "gb_oliver_sad"
+    "gb_oliver_sad",
 ]
+
+# --- Streaming ----------------------------------------------------------
+# Cap on concurrently in-flight Mistral TTS requests (one per sentence).
+# Bounds memory and outbound concurrency if the LLM emits many sentences in
+# a burst.
+TTS_MAX_INFLIGHT_SENTENCES = 5
+
+# Per-sentence audio chunk queue capacity. Provides backpressure: if Voice
+# PE is draining slowly, the producer task blocks here instead of buffering
+# MBs.
+TTS_AUDIO_QUEUE_MAXSIZE = 32
+
+# Don't fire TTS for sentences shorter than this — avoids spamming the API
+# on stray "OK." or single-word fragments and waiting on TTFB for nothing.
+TTS_MIN_SENTENCE_CHARS = 12
+
+# Standard PCM-WAV header size for Mistral's streaming WAV: RIFF(8) + WAVE(4)
+# + fmt subchunk(24) + data subchunk header(8) = 44 bytes. Verified
+# empirically against api.mistral.ai with response_format=wav, stream=true.
+TTS_WAV_HEADER_SIZE = 44
 
 # ---------------------------------------------------------------------------
 # API

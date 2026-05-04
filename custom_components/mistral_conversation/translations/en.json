@@ -40,7 +40,8 @@
           "continue_conversation": "Enable conversations and listen to responses (Experimental)",
           "web_search": "Enable web search (Beta)",
           "stt_language": "Speech recognition language (STT)",
-          "tts_voice": "Text-to-speech voice"
+          "tts_voice": "Text-to-speech voice",
+          "tts_mode": "Text-to-speech mode"
         },
         "data_description": {
           "model": "Which Mistral model to use. Ministral-8b is recommended for home automation commands: fast, cost-effective and great at instruction-following.",
@@ -51,8 +52,17 @@
           "continue_conversation": "When enabled, the assistant automatically keeps listening after a response that ends with a question. Uses the native HA continue_conversation flag. Experimental: behaviour may vary by satellite.",
           "web_search": "When enabled, the AI can search the web for up-to-date information. Uses Mistral's Agents API (beta). Requires a model that supports agents (mistral-medium-latest or mistral-large-latest).",
           "stt_language": "Language for Voxtral speech-to-text. Select 'Auto-detect' to let Voxtral determine the language automatically.",
-          "tts_voice": "Default voice used by Mistral TTS, if none is configured in the assistant settings."
+          "tts_voice": "Default voice used by Mistral TTS, if none is configured in the assistant settings.",
+          "tts_mode": "Stream: low-latency SSE WAV with sentence-level pipelining. Batch: single mp3 request, higher latency but smaller responses cache well. The tts.speak service always uses batch."
         }
+      }
+    }
+  },
+  "selector": {
+    "tts_mode": {
+      "options": {
+        "stream": "Streaming",
+        "batch": "Batch"
       }
     }
   }

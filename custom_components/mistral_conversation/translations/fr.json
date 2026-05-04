@@ -40,7 +40,8 @@
           "continue_conversation": "Activer les conversations et écouter les réponses (Expérimental)",
           "web_search": "Activer la recherche sur le web (Beta)",
           "stt_language": "Langage de la reconnaissance vocale (STT)",
-          "tts_voice": "Voix de la transcription vocale (TTS)"
+          "tts_voice": "Voix de la transcription vocale (TTS)",
+          "tts_mode": "Mode de synthèse vocale (TTS)"
         },
         "data_description": {
           "model": "Quel modèle Mistral utiliser. Ministral-8b est recommandé pour les commandes de domotique : il est rapide, d'un bon rapport qualité/prix et bon pour le suivi d'instructions.",
@@ -51,8 +52,17 @@
           "continue_conversation": "Quand activé, l'assistant continue automatiquement d'écouter après une réponse qui finit sur une question. Utilise le signal continue_conversation natif à HA. Expérimental : le comportement peut varier par satellite.",
           "web_search": "Quand activé, l'IA peut chercher sur internet pour des informations à jour. Utilise l'API Agents de Mistral (beta). Requiert un modèle qui prend en charge les agents (mistral-medium-latest ou mistral-large-latest).",
           "stt_language": "Langue utilisée pour la reconnaissance vocale (STT) de Voxtral. Selectionnez 'Auto-detect' Pour laisser Voxtral déterminer la langue de lui-même.",
-          "tts_voice": "Voix par défaut utilisée par Mistral TTS, si aucune n'est configurée dans les paramètres de l'assistant."
+          "tts_voice": "Voix par défaut utilisée par Mistral TTS, si aucune n'est configurée dans les paramètres de l'assistant.",
+          "tts_mode": "Streaming : faible latence avec WAV en SSE et pipelining par phrase. Batch : une seule requête mp3, latence plus élevée mais réponses plus petites bien mises en cache. Le service tts.speak utilise toujours le mode batch."
         }
+      }
+    }
+  },
+  "selector": {
+    "tts_mode": {
+      "options": {
+        "stream": "Streaming",
+        "batch": "Batch"
       }
     }
   }
