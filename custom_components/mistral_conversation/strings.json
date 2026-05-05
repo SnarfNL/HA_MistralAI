@@ -40,19 +40,29 @@
           "continue_conversation": "Enable conversations and listen to responses (Experimental)",
           "web_search": "Enable web search (Beta)",
           "stt_language": "Speech recognition language (STT)",
-          "tts_voice": "Text-to-speech voice"
+          "tts_voice": "Text-to-speech voice",
+          "tts_mode": "Text-to-speech mode"
         },
         "data_description": {
           "model": "Which Mistral model to use. Ministral-8b is recommended for home automation commands: fast, cost-effective and great at instruction-following.",
-          "prompt": "Instructions for the AI. Supports Jinja2 templates with {{ ha_name }}, {{ now() }} etc.",
+          "prompt": "Instructions for the AI. Supports Jinja2 templates — for example, the HA instance name via ha_name, or the current date via now(). See the README for the full list of variables.",
           "llm_hass_api": "Select which Home Assistant APIs the AI can use to control your devices. 'Assist' exposes the same entities as the built-in voice assistant.",
           "temperature": "0 = deterministic, 1 = creative. Mistral range: 0.0–1.0.",
           "max_tokens": "Maximum length of the AI response in tokens.",
           "continue_conversation": "When enabled, the assistant automatically keeps listening after a response that ends with a question. Uses the native HA continue_conversation flag. Experimental: behaviour may vary by satellite.",
           "web_search": "When enabled, the AI can search the web for up-to-date information. Uses Mistral's Agents API (beta). Requires a model that supports agents (mistral-medium-latest or mistral-large-latest).",
           "stt_language": "Language for Voxtral speech-to-text. Select 'Auto-detect' to let Voxtral determine the language automatically.",
-          "tts_voice": "Voice used by Mistral TTS. 'Nova' is neutral and works well for home automation. All voices support any language."
+          "tts_voice": "Voice used by Mistral TTS. 'Nova' is neutral and works well for home automation. All voices support any language.",
+          "tts_mode": "Stream: low-latency SSE WAV with sentence-level pipelining. Batch: single mp3 request, higher latency but smaller responses cache well. The tts.speak service always uses batch."
         }
+      }
+    }
+  },
+  "selector": {
+    "tts_mode": {
+      "options": {
+        "stream": "Streaming",
+        "batch": "Batch"
       }
     }
   }

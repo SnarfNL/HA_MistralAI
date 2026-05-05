@@ -171,11 +171,19 @@ def _convert_chat_log_to_messages(
 #   if "role" not in delta: ...
 # which means it ALWAYS expects dicts, never plain str/ToolInput.
 #
-# The previous "can only concatenate str (not list)" error was caused by
-# mixing content and tool_calls in a single dict. The fix is to always yield
-# them as SEPARATE dicts, never combined:
+# The first delta of every assistant turn MUST be {"role": "assistant"}.
+# HA's pipeline (assist_pipeline/pipeline.py chat_log_delta_listener) gates
+# all forwarding to tts_input_stream on chat_log_role == "assistant". Without
+# the role yield, content deltas are silently dropped by the pipeline,
+# tts_start_streaming never fires, and TTS streaming is dead. The tool-call
+# loop in _async_handle_message calls _stream_and_collect once per round, so
+# a fresh role yield per call correctly signals each new assistant message.
+#
+# Each subsequent delta carries exactly one of:
 #   {"content": "text string"}      — text delta
 #   {"tool_calls": [ToolInput(...)]} — completed tool call
+# Never combined in one dict — that previously caused
+# "can only concatenate str (not list)" inside chat_log.
 # ---------------------------------------------------------------------------
 
 async def _async_stream_delta(
@@ -183,16 +191,20 @@ async def _async_stream_delta(
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Parse SSE stream from Mistral and yield delta dicts for HA's chat_log.
 
-    Yields exactly one of:
-      {"content": str}                — text content delta
+    Yields, in order:
+      {"role": "assistant"}           — start of a new assistant message
+      {"content": str}                — text content delta (zero or more)
       {"tool_calls": [llm.ToolInput]} — one completed tool call per yield
+                                        (zero or more, after content)
 
-    Never yields both keys in the same dict. HA 2026.4 does
-    `if "role" not in delta` on each item, so plain str/ToolInput objects
-    will raise TypeError — dicts are required.
+    HA 2026.4 does `if "role" not in delta` on each item, so plain
+    str/ToolInput objects will raise TypeError — dicts are required.
     """
     buffer = b""
     current_tool_calls: dict[int, dict] = {}
+
+    # Required first delta — see module-level note above.
+    yield {"role": "assistant"}
 
     async def _flush() -> AsyncGenerator[dict[str, Any], None]:
         """Yield each buffered tool call as its own dict and clear the buffer."""

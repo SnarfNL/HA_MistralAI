@@ -9,7 +9,7 @@
   <p><em>⚠️ Please note this is not an officially supported integration and is not affiliated with Mistral AI in any way.</em></p>
 
   [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/hacs/integration)
-  [![HA Version](https://img.shields.io/badge/Home%20Assistant-2023.5%2B-blue?style=for-the-badge&logo=home-assistant)](https://www.home-assistant.io/)
+  [![HA Version](https://img.shields.io/badge/Home%20Assistant-2025.10%2B-blue?style=for-the-badge&logo=home-assistant)](https://www.home-assistant.io/)
   [![Mistral AI](https://img.shields.io/badge/Mistral%20AI-Powered-orange?style=for-the-badge)](https://mistral.ai/)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 </div>
@@ -56,7 +56,8 @@ This integration makes **Mistral AI** available as a fully-featured conversation
 | Smart home control | ✅ | Control lights, switches, covers, locks, etc. |
 | Speech recognition (STT) | ✅ | Voxtral Mini via `/v1/audio/transcriptions` |
 | Text-to-speech (TTS) | ✅ | Mistral TTS via `/v1/audio/speech` with multiple voices |
-| Conversation memory | ✅ | Context kept per session (20 turns) |
+| Streaming TTS | ✅ | Low-latency SSE WAV with sentence-level pipelining (≥ v0.4.0) |
+| Conversation memory | ✅ | Context kept per session until 5 min idle (HA timeout). |
 | Jinja2 system prompt | ✅ | Templates with `{{ now() }}`, `{{ ha_name }}` etc. |
 | Multilingual | ✅ | Responds in the user's language |
 | Continue conversation | ✅ | Keeps microphone open after questions (Experimental) |
@@ -70,8 +71,8 @@ This integration makes **Mistral AI** available as a fully-featured conversation
 
 | Requirement | Minimum version |
 |---|---|
-| Home Assistant Core | 2023.5 |
-| Python | 3.11 |
+| Home Assistant Core | 2025.10 |
+| Python | 3.13 |
 | Mistral AI account + API key | — |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -138,7 +139,7 @@ Click the integration → **Configure** to change settings.
 | **Control HA** | On | Allow the AI to control exposed devices |
 | **Continue conversation** | Off | Keep listening after questions (Experimental) |
 | **STT language** | Auto-detect | Language for Voxtral transcription |
-
+| **TTS mode** | `Streaming` | `Streaming` (SSE WAV with sentence-level pipelining) or `Batch` (single MP3 request) |
 ### Available models
 
 | Model | Speed | Cost | Best for |
@@ -160,6 +161,9 @@ You are a helpful voice assistant for {{ ha_name }}.
 Answer in the same language the user speaks.
 Today is {{ now().strftime('%A, %B %d, %Y') }} and the time is {{ now().strftime('%H:%M') }}.
 Be concise and friendly.
+For straightforward home control commands, briefly confirm the action taken without asking follow-up questions.
+Your responses are read aloud by text-to-speech, so reply in plain text.
+Do not use markdown formatting that cannot be read aloud, such as asterisks for bold, underscores for italics, backticks, bullet lists, emojis, or headers.
 ```
 
 **Available template variables:**
@@ -262,7 +266,27 @@ In the options, select a language from the dropdown for best accuracy, or leave 
 
 ## Text-to-speech (TTS)
 
-When the integration is installed, a **Mistral AI TTS** entity is registered automatically as a separate HA TTS provider. It uses Mistral's  endpoint and returns MP3 audio.
+When the integration is installed, a **Mistral AI TTS** entity is registered automatically as a separate HA TTS provider. It uses Mistral's `/v1/audio/speech` endpoint and supports two operating modes (see [TTS modes](#tts-modes) below): low-latency streaming WAV (default, since v0.4.0) and single-shot MP3.
+
+### TTS modes
+
+Selectable via **Settings → Devices & Services → Mistral AI Conversation → Configure → Text-to-speech mode**:
+
+| Mode | Behaviour | First audio | Best for |
+|---|---|---|---|
+| **Streaming** *(default)* | Server-Sent Events with chunked WAV. Sentences are extracted from the LLM token stream and dispatched to Mistral in parallel (up to 5 concurrent), with audio reassembled in strict order. | ~0.5–1 s | HA Voice satellites (Voice PE, ESPHome) |
+| **Batch** | Single non-streaming POST returns the full MP3 in a JSON body before any audio is yielded. | After full synthesis (~3–5 s for long replies) | Direct `tts.speak` service calls; environments where chunked HTTP is problematic |
+
+> **Note:** Direct `tts.speak` service calls always use the batch path regardless of this setting (the service expects a single audio file, not a stream).
+
+### Voxtral TTS specifications
+
+| Property | Value |
+|---|---|
+| Model | `voxtral-mini-tts-2603` |
+| Stream container | WAV (24 kHz, 16-bit, mono PCM) |
+| Batch container | MP3 (base64-wrapped JSON response) |
+| Voices | EN-US (Paul), GB (Jane, Oliver), FR (Marie) — emotion variants |
 
 ### Selecting a voice
 
@@ -297,6 +321,17 @@ A: Mistral AI processes requests via their servers. See their [privacy policy](h
 ---
 
 ## Release Notes
+
+### v0.4.0 — 2026-05-04
+- **Added:** Streaming TTS via Mistral's SSE WAV endpoint (`response_format=wav`, `stream=true`). End-of-speech-to-first-audio drops from ~5 s to ~1 s for long responses — audio chunks arrive while synthesis is in progress instead of waiting for the full MP3.
+- **Added:** Sentence-level pipelining — incoming LLM tokens are segmented into complete sentences and dispatched to Mistral in parallel (up to 5 concurrent requests bounded by an `asyncio.Semaphore`). Audio is reassembled in strict order with the WAV header from sentence 0 followed by raw PCM samples from sentences 1..N.
+- **Added:** `tts_mode` integration option — choose between `stream` (default) and `batch`. Direct `tts.speak` service calls always use the batch path regardless of this setting.
+- **Added:** `tests/` directory with 64 unit tests covering `_streaming` helpers (sentence segmenter, SSE parser), const sanity (defaults reference valid values, voice naming convention, WAV header pin), `_pcm_to_wav` (round-trips RIFF/WAVE, fmt subchunk, data subchunk), and `_async_stream_delta` (chat-completions SSE: text deltas, `[DONE]` termination, tool-call accumulation, frame-split tolerance, malformed JSON resilience). Run with `python -m unittest discover -t . -s tests`.
+- **Added:** MIT `LICENSE` file at the repo root.
+- **Fixed:** `async_unload_entry` now unloads platforms *before* clearing runtime data — previously the order was reversed, which could race with in-flight streaming TTS that resolves `self._runtime` lazily on each chunk.
+- **Changed:** Minimum Home Assistant version bumped to **2025.10.0** — required for `async_stream_tts_audio` (HA streaming TTS API, shipped 2025.7).
+
+---
 
 ### v0.3.6 — 2026-04-10
 - **Changed** :Setting default voices and language has been clarified

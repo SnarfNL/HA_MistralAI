@@ -19,6 +19,7 @@ from .const import (
     CONF_MODEL,
     CONF_PROMPT,
     CONF_TEMPERATURE,
+    CONF_TTS_MODE,
     CONF_TTS_VOICE,
     CONF_WEB_SEARCH,
     DEFAULT_CONTINUE_CONVERSATION,
@@ -26,10 +27,12 @@ from .const import (
     DEFAULT_MODEL,
     DEFAULT_PROMPT,
     DEFAULT_TEMPERATURE,
+    DEFAULT_TTS_MODE,
     DEFAULT_TTS_VOICE,
     DEFAULT_WEB_SEARCH,
     DOMAIN,
     MISTRAL_API_BASE,
+    TTS_MODES,
     TTS_VOICES,
 )
 from .stt import LANGUAGE_OPTIONS
@@ -236,6 +239,21 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                         selector.SelectSelectorConfig(
                             options=TTS_VOICES,
                             mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    # ── TTS mode (stream vs batch) ────────────────────────
+                    # 'stream' uses Mistral's SSE WAV endpoint with sentence
+                    # pipelining for low time-to-first-audio. 'batch' issues a
+                    # single mp3 request. Direct tts.speak service calls
+                    # always use batch regardless of this setting.
+                    vol.Optional(
+                        CONF_TTS_MODE,
+                        default=opts.get(CONF_TTS_MODE, DEFAULT_TTS_MODE),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=TTS_MODES,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            translation_key="tts_mode",
                         )
                     ),
                 }

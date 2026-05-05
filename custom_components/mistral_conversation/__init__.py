@@ -61,11 +61,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    runtime: MistralRuntimeData | None = hass.data.get(DOMAIN, {}).pop(
-        entry.entry_id, None
-    )
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload a config entry.
+
+    Order matters: platforms must be unloaded *before* the runtime data is
+    cleared, so entities can complete their teardown (closing streams,
+    cancelling pipelined TTS tasks, etc.) using ``self._runtime`` while it
+    still exists. Clearing first races with in-flight ``async_stream_tts_audio``
+    iterations that resolve ``self._runtime`` lazily on each chunk.
+    """
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    return unload_ok
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
