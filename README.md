@@ -322,7 +322,9 @@ A: Mistral AI processes requests via their servers. See their [privacy policy](h
 
 ## Release Notes
 
-### v0.4.0 — 2026-05-04
+### 2026.05 — 2026-05-04
+- **Changed:** Version numbering from digits to year.month.version format.
+- **Added:** New AI task entity that lets Mistral generate structured data, handle image attachments, and respect output schemas defined in HA automations.
 - **Added:** Streaming TTS via Mistral's SSE WAV endpoint (`response_format=wav`, `stream=true`). End-of-speech-to-first-audio drops from ~5 s to ~1 s for long responses — audio chunks arrive while synthesis is in progress instead of waiting for the full MP3.
 - **Added:** Sentence-level pipelining — incoming LLM tokens are segmented into complete sentences and dispatched to Mistral in parallel (up to 5 concurrent requests bounded by an `asyncio.Semaphore`). Audio is reassembled in strict order with the WAV header from sentence 0 followed by raw PCM samples from sentences 1..N.
 - **Added:** `tts_mode` integration option — choose between `stream` (default) and `batch`. Direct `tts.speak` service calls always use the batch path regardless of this setting.
