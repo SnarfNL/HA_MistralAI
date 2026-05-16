@@ -56,12 +56,13 @@ This integration makes **Mistral AI** available as a fully-featured conversation
 | Smart home control | ✅ | Control lights, switches, covers, locks, etc. |
 | Speech recognition (STT) | ✅ | Voxtral Mini via `/v1/audio/transcriptions` |
 | Text-to-speech (TTS) | ✅ | Mistral TTS via `/v1/audio/speech` with multiple voices |
-| Streaming TTS | ✅ | Low-latency SSE WAV with sentence-level pipelining (≥ v0.4.0) |
-| Conversation memory | ✅ | Context kept per session until 5 min idle (HA timeout). |
+| Streaming TTS | ✅ | Low-latency SSE WAV with sentence-level pipelining (≥ 2026.05) |
+| Conversation memory | ✅ | Context kept per session until 5 min idle (HA timeout) |
 | Jinja2 system prompt | ✅ | Templates with `{{ now() }}`, `{{ ha_name }}` etc. |
 | Multilingual | ✅ | Responds in the user's language |
 | Continue conversation | ✅ | Keeps microphone open after questions (Experimental) |
 | Separate devices | ✅ | Conversation and STT appear as separate HA devices |
+| Custom voices | ✅ | Discovered automatically; manual UUID override supported (≥ 2026.05.1) |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -139,7 +140,9 @@ Click the integration → **Configure** to change settings.
 | **Control HA** | On | Allow the AI to control exposed devices |
 | **Continue conversation** | Off | Keep listening after questions (Experimental) |
 | **STT language** | Auto-detect | Language for Voxtral transcription |
-| **TTS mode** | `Streaming` | `Streaming` (SSE WAV with sentence-level pipelining) or `Batch` (single MP3 request) |
+| **TTS voice** | `en_paul_neutral` | Preset voice from dropdown (discovered custom voices shown when available) |
+| **Custom voice override** | *(empty)* | Paste a custom voice UUID or slug to bypass the dropdown |
+| **TTS mode** | `Streaming` | `Streaming` (SSE WAV) or `Batch` (single MP3 request) |
 ### Available models
 
 | Model | Speed | Cost | Best for |
@@ -290,13 +293,43 @@ Selectable via **Settings → Devices & Services → Mistral AI Conversation →
 
 ### Selecting a voice
 
-In **Settings → Devices & Services → Mistral AI Conversation → Configure**, choose from the available voices.
-The available voices are retrieved dynamically. Currently there are only voices for EN, GB and FR available. 
+In **Settings → Devices & Services → Mistral AI Conversation → Configure**, choose a voice from the **Text-to-speech voice** dropdown.
+
+#### Preset voices
+
+22 built-in voices are available across English (`en`), British (`gb`), and French (`fr`) with different emotions (angry, cheerful, neutral, sad, etc.). These are the preset voices Mistral provides for `voxtral-mini-tts-2603`.
+
+#### Custom voices (discovered automatically)
+
+If you have created **custom voices** in the Mistral Console, the integration discovers them automatically at startup via `GET /v1/audio/voices`. Discovered voices appear **below the presets** in the dropdown, labeled as:
+
+- `Custom: My Voice (my-voice-slug)` — when the voice has a slug
+- `Custom: My Voice (no slug)` — when the voice has no slug (Mistral allows this)
+
+> **Note:** Discovery happens once during integration setup. If you create a new custom voice after the integration is running, **reload** the integration (Settings → Devices & Services → ⋮ → Reload) or restart Home Assistant to pick it up.
+
+#### Custom voice override
+
+If a custom voice is **not discovered automatically** (e.g. network issues, or the voice lacks a slug and does not appear in the dropdown), use the **Custom voice override** field in the options:
+
+1. Go to [console.mistral.ai](https://console.mistral.ai/) → **Voices**
+2. Click your custom voice → copy the **Voice ID** (a UUID like `a1b2c3d4-e5f6-...`)
+3. Paste it into the **Custom voice override** field
+4. The override takes precedence over the dropdown selection
+
+The override field accepts both a **UUID** (`a1b2c3d4-e5f6-...`) and a **slug** (`my-voice-slug`). It is sent directly to Mistral's API as `voice_id`, bypassing the dropdown entirely.
+
+> **Tip:** Leave the override field empty to use the dropdown voice. The per-request `voice` option from automations or the Voice Assistants dialog still takes highest priority (useful for temporarily trying a different voice without changing settings). 
 
 <p align=right>(<a href=#readme-top>back to top</a>)</p>
 ---
 
 ## FAQ
+
+**Q: My custom Mistral voice doesn't appear in the dropdown.**
+A: The integration discovers custom voices from Mistral's API at startup. If a voice is missing:
+   1. Reload the integration (Settings → Devices & Services → ⋮ → Reload).
+   2. If it still doesn't appear (e.g. it has no slug), paste its Voice ID into the **Custom voice override** field.
 
 **Q: The integration does not appear in the Voice Assistants dropdown.**
 A: Make sure you performed a full restart (not just reload) and cleared any `__pycache__` directories.
@@ -321,6 +354,22 @@ A: Mistral AI processes requests via their servers. See their [privacy policy](h
 ---
 
 ## Release Notes
+
+### 2026.05.1 — 2026-05-16
+- **Added:** Automatic discovery of **custom voices** from Mistral's `/v1/audio/voices` endpoint. Custom voices (including those with `null` or missing slugs) are appended to the TTS voice dropdown with clear labels (`Custom: Name (slug)` or `Custom: Name (no slug)`).
+- **Added:** **Custom voice override** field in integration options — bypasses the dropdown entirely. Paste a custom voice UUID or slug directly; it is sent to Mistral's API as-is. Useful when discovery is unavailable or a voice has no slug.
+- **Added:** Voice resolution priority (highest to lowest):
+  1. Per-request `voice` option (Voice Assistants dialog / automation)
+  2. Persistent **Custom voice override**
+  3. **TTS voice** dropdown (preset or discovered)
+  4. Built-in default (`en_paul_neutral`)
+- **Added:** `async_get_supported_voices()` on the TTS entity — discovered voices are now exposed in Home Assistant's Voice Assistants dialog alongside presets.
+- **Added:** 13 new unit tests in `tests/test_voice.py` covering voice discovery (`async_discover_mistral_voices`), voice resolution (`_resolve_voice`), supported voice listing, and options-flow voice building. All tests pass without Home Assistant installed thanks to updated `tests/_ha_stubs.py`.
+- **Fixed:** `MistralRuntimeData` dataclass now declares `discovered_voices` as a typed field (`default_factory=list`) for cleaner structure.
+- **Fixed:** Voice discovery deduplicates by `id` so duplicate API entries don't produce duplicate dropdown items.
+- **Fixed:** Discovery errors are fully non-fatal — any `aiohttp.ClientError` or unexpected exception during setup is caught, logged at debug level, and the integration continues with preset voices only.
+
+---
 
 ### 2026.05 — 2026-05-04
 - **Changed:** Version numbering from digits to year.month.version format.
