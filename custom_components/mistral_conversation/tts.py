@@ -18,6 +18,12 @@ Two operating modes selectable via integration options (CONF_TTS_MODE):
   so direct ``tts.speak`` service calls keep working. When CONF_TTS_MODE is
   ``batch``, ``async_stream_tts_audio`` also delegates here via the base
   class default implementation.
+
+Voice selection priority (highest to lowest):
+  1. ``CONF_TTS_VOICE_OVERRIDE`` — raw voice_id typed by the user. Bypasses
+     the dropdown entirely and is sent directly to Mistral's API.
+  2. Voice Assistants dialog ``options["voice"]`` — chosen per-pipeline.
+  3. Integration default ``CONF_TTS_VOICE`` — fallback from the dropdown.
 """
 
 from __future__ import annotations
@@ -50,8 +56,10 @@ from ._streaming import (
 from .const import (
     CONF_TTS_MODE,
     CONF_TTS_VOICE,
+    CONF_TTS_VOICE_OVERRIDE,
     DEFAULT_TTS_MODE,
     DEFAULT_TTS_VOICE,
+    DEFAULT_TTS_VOICE_OVERRIDE,
     DOMAIN,
     MISTRAL_API_BASE,
     TTS_INTER_SENTENCE_SILENCE_BYTES,
@@ -91,16 +99,7 @@ async def async_setup_entry(
 
 
 class MistralTTSEntity(TextToSpeechEntity):
-    """Mistral AI text-to-speech entity.
-
-    Voice selection priority (highest to lowest):
-      1. Voice Assistants dialog (Settings → Voice Assistants → Text-to-speech
-         voice). HA passes this selection via options["voice"] in each call.
-      2. Integration default (Settings → Devices & Services → Configure →
-         Text-to-speech voice). Used as fallback when no voice is chosen in
-         the Voice Assistants dialog or when TTS is called from an automation
-         without an explicit voice option.
-    """
+    """Mistral AI text-to-speech entity."""
 
     _attr_has_entity_name = True
     _attr_name = "Mistral AI TTS"
@@ -141,13 +140,63 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     @property
     def default_options(self) -> dict[str, Any]:
-        """Return the integration-configured default voice as fallback."""
+        """Return the integration-configured default voice as fallback.
+
+        The ``CONF_TTS_VOICE_OVERRIDE`` takes precedence over the dropdown
+        voice so that users who enter a custom voice_id don't have to also
+        change the dropdown selection.
+        """
+        override = self._entry.options.get(
+            CONF_TTS_VOICE_OVERRIDE, DEFAULT_TTS_VOICE_OVERRIDE
+        )
+        if override:
+            return {"voice": override}
         voice = self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
         return {"voice": voice}
 
     def async_get_supported_voices(self, language: str) -> list[Voice]:
-        """Return all available Mistral TTS voices for the Voice Assistants dialog."""
-        return [Voice(voice_id=v, name=v.replace("_", " ").title()) for v in TTS_VOICES]
+        """Return all available Mistral TTS voices for the Voice Assistants dialog.
+
+        Preset voices from ``TTS_VOICES`` are always included. Discovered
+        custom voices (including those with null/empty slugs) are appended
+        with clear labeling.
+        """
+        voices: list[Voice] = [
+            Voice(voice_id=v, name=v.replace("_", " ").title())
+            for v in TTS_VOICES
+        ]
+
+        discovered = getattr(self._runtime, "discovered_voices", [])
+        for voice in discovered:
+            voice_id = voice.get("id")
+            name = voice.get("name") or voice_id
+            slug = voice.get("slug")
+            if slug:
+                display = f"Custom: {name} ({slug})"
+            else:
+                display = f"Custom: {name} (no slug)"
+            if voice_id and voice_id not in TTS_VOICES:
+                voices.append(Voice(voice_id=voice_id, name=display))
+
+        return voices
+
+    def _resolve_voice(self, options: dict[str, Any]) -> str:
+        """Determine the effective voice_id for a TTS request.
+
+        Priority (highest → lowest):
+          1. ``options["voice"]`` from Voice Assistants dialog or automation
+          2. ``CONF_TTS_VOICE_OVERRIDE`` persistent free-text override
+          3. ``CONF_TTS_VOICE`` from the dropdown (preset or discovered)
+          4. Built-in default
+        """
+        if options.get("voice"):
+            return str(options["voice"])
+        override = self._entry.options.get(
+            CONF_TTS_VOICE_OVERRIDE, DEFAULT_TTS_VOICE_OVERRIDE
+        )
+        if override:
+            return override
+        return self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
 
     # ------------------------------------------------------------------
     # Batch path
@@ -161,12 +210,8 @@ class MistralTTSEntity(TextToSpeechEntity):
         language: str,
         options: dict[str, Any],
     ) -> TtsAudioType:
-        """Synthesise speech via the Mistral audio/speech endpoint.
-
-        Voice priority: options["voice"] (from Voice Assistants dialog) wins
-        over the integration default (CONF_TTS_VOICE).
-        """
-        voice = options.get("voice") or self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
+        """Synthesise speech via the Mistral audio/speech endpoint."""
+        voice = self._resolve_voice(options)
 
         payload = {
             "model": TTS_MODEL,
@@ -232,7 +277,7 @@ class MistralTTSEntity(TextToSpeechEntity):
         if mode == TTS_MODE_BATCH:
             return await super().async_stream_tts_audio(request)
 
-        voice = request.options.get("voice") or self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
+        voice = self._resolve_voice(request.options)
 
         return TTSAudioResponse(
             extension="wav",
@@ -251,7 +296,7 @@ class MistralTTSEntity(TextToSpeechEntity):
 
         Architecture::
 
-            message_gen ─► producer ─► outer_q (FIFO of inner queues)
+            message_gen —► producer —► outer_q (FIFO of inner queues)
                               │            │
                               │            ▼
                               ▼          consumer (this generator)

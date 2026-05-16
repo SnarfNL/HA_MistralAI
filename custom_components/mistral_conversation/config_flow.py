@@ -21,6 +21,7 @@ from .const import (
     CONF_TEMPERATURE,
     CONF_TTS_MODE,
     CONF_TTS_VOICE,
+    CONF_TTS_VOICE_OVERRIDE,
     CONF_WEB_SEARCH,
     DEFAULT_CONTINUE_CONVERSATION,
     DEFAULT_MAX_TOKENS,
@@ -29,6 +30,7 @@ from .const import (
     DEFAULT_TEMPERATURE,
     DEFAULT_TTS_MODE,
     DEFAULT_TTS_VOICE,
+    DEFAULT_TTS_VOICE_OVERRIDE,
     DEFAULT_WEB_SEARCH,
     DOMAIN,
     MISTRAL_API_BASE,
@@ -151,6 +153,9 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
             # Clean up empty LLM API selection
             if not user_input.get(CONF_LLM_HASS_API):
                 user_input.pop(CONF_LLM_HASS_API, None)
+            # Strip whitespace from override; store empty string as fallback
+            override = (user_input.get(CONF_TTS_VOICE_OVERRIDE) or "").strip()
+            user_input[CONF_TTS_VOICE_OVERRIDE] = override
             return self.async_create_entry(title="", data=user_input)
 
         opts = self.config_entry.options
@@ -160,6 +165,9 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
             selector.SelectOptionDict(label=api.name, value=api.id)
             for api in llm.async_get_apis(self.hass)
         ]
+
+        # Build combined voice list: presets + discovered custom voices
+        voice_options = self._build_voice_options()
 
         return self.async_show_form(
             step_id="init",
@@ -228,24 +236,28 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                         CONF_WEB_SEARCH,
                         default=opts.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH),
                     ): selector.BooleanSelector(),
-                    # ── TTS voice (fallback default) ──────────────────────
-                    # Primary voice selection is in Settings → Voice Assistants.
-                    # This setting is used as fallback when no voice is chosen
-                    # there, or when TTS is called directly from an automation.
+                    # ── TTS voice (combined presets + discovered custom) ──
                     vol.Optional(
                         CONF_TTS_VOICE,
                         default=opts.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE),
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=TTS_VOICES,
+                            options=voice_options,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
+                    # ── Custom voice override ─────────────────────────────
+                    vol.Optional(
+                        CONF_TTS_VOICE_OVERRIDE,
+                        default=opts.get(
+                            CONF_TTS_VOICE_OVERRIDE, DEFAULT_TTS_VOICE_OVERRIDE
+                        ),
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.TEXT
+                        )
+                    ),
                     # ── TTS mode (stream vs batch) ────────────────────────
-                    # 'stream' uses Mistral's SSE WAV endpoint with sentence
-                    # pipelining for low time-to-first-audio. 'batch' issues a
-                    # single mp3 request. Direct tts.speak service calls
-                    # always use batch regardless of this setting.
                     vol.Optional(
                         CONF_TTS_MODE,
                         default=opts.get(CONF_TTS_MODE, DEFAULT_TTS_MODE),
@@ -259,3 +271,38 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                 }
             ),
         )
+
+    def _build_voice_options(self) -> list[selector.SelectOptionDict]:
+        """Build a SelectOptionDict list of preset and discovered voices.
+
+        Preset voices are listed first with human-friendly labels.
+        Discovered custom voices are appended with clear labeling
+        (including ``(no slug)`` for those that lack one).
+        """
+        options: list[selector.SelectOptionDict] = [
+            selector.SelectOptionDict(
+                label=v.replace("_", " ").title(), value=v
+            )
+            for v in TTS_VOICES
+        ]
+
+        # Append discovered custom voices from cached runtime data
+        runtime = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        discovered: list[dict[str, str | None]] = []
+        if runtime is not None:
+            discovered = getattr(runtime, "discovered_voices", [])
+
+        for voice in discovered:
+            voice_id = voice.get("id")
+            name = voice.get("name") or voice_id
+            slug = voice.get("slug")
+            if slug:
+                label = f"Custom: {name} ({slug})"
+            else:
+                label = f"Custom: {name} (no slug)"
+            if voice_id and voice_id not in TTS_VOICES:
+                options.append(
+                    selector.SelectOptionDict(label=label, value=voice_id)
+                )
+
+        return options

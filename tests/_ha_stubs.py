@@ -93,9 +93,18 @@ for _n in (
 _tts = sys.modules["homeassistant.components.tts"]
 for _n in (
     "TextToSpeechEntity", "TTSAudioRequest", "TTSAudioResponse",
-    "TtsAudioType", "Voice",
+    "TtsAudioType",
 ):
     setattr(_tts, _n, _empty_class(_n))
+
+
+class _Voice:
+    def __init__(self, voice_id: str = "", name: str = "") -> None:
+        self.voice_id = voice_id
+        self.name = name
+
+
+_tts.Voice = _Voice
 
 _cfg = sys.modules["homeassistant.config_entries"]
 _cfg.ConfigFlow = _kwarg_class("ConfigFlow")
@@ -142,6 +151,17 @@ class _ToolInput:
 
 sys.modules["homeassistant.helpers.llm"].ToolInput = _ToolInput
 
+
+# SelectOptionDict is used as a real data-holding container
+sys.modules["homeassistant.helpers.selector"].SelectOptionDict = type(
+    "SelectOptionDict", (), {"__init__": lambda self, **kw: self.__dict__.update(kw)}
+)
+
+
+# aiohttp needs real exception types so ``except aiohttp.ClientError`` works
+_aiohttp = sys.modules["aiohttp"]
+_aiohttp.ClientError = type("ClientError", (Exception,), {})
+_aiohttp.ClientTimeout = type("ClientTimeout", (), {"__init__": lambda self, **kw: None})
 
 # ---------------------------------------------------------------------------
 # Wire submodules as attributes of their parent modules.

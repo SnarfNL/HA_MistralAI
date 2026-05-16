@@ -112,5 +112,15 @@ class ApiConstantsTests(unittest.TestCase):
         self.assertGreater(C.MAX_TOOL_ITERATIONS, 0)
 
 
+class OverrideConstantTests(unittest.TestCase):
+    def test_default_tts_voice_override_is_empty_string(self) -> None:
+        """Override starts empty so the dropdown voice remains effective."""
+        self.assertEqual(C.DEFAULT_TTS_VOICE_OVERRIDE, "")
+
+    def test_tts_voice_override_constant_exists(self) -> None:
+        """CONF_TTS_VOICE_OVERRIDE must exist as a string key."""
+        self.assertEqual(C.CONF_TTS_VOICE_OVERRIDE, "tts_voice_override")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -16,6 +16,9 @@ CONF_TTS_VOICE = "tts_voice"
 CONF_TTS_MODE = "tts_mode"
 # Note: device control uses HA's native CONF_LLM_HASS_API from homeassistant.const
 
+# Custom voice override — bypasses the dropdown and passes raw voice_id to Mistral
+CONF_TTS_VOICE_OVERRIDE = "tts_voice_override"
+
 # tts_mode values
 TTS_MODE_STREAM = "stream"
 TTS_MODE_BATCH = "batch"
@@ -32,6 +35,7 @@ DEFAULT_WEB_SEARCH = False
 DEFAULT_STT_LANGUAGE = ""  # empty = Voxtral auto-detect
 DEFAULT_TTS_VOICE = "en_paul_neutral"
 DEFAULT_TTS_MODE = TTS_MODE_STREAM
+DEFAULT_TTS_VOICE_OVERRIDE = ""
 
 DEFAULT_PROMPT = (
     "You are a helpful voice assistant for a smart home called {{ ha_name }}.\n"

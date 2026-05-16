@@ -41,6 +41,7 @@
           "web_search": "Enable web search (Beta)",
           "stt_language": "Speech recognition language (STT)",
           "tts_voice": "Text-to-speech voice",
+          "tts_voice_override": "Custom voice override",
           "tts_mode": "Text-to-speech mode"
         },
         "data_description": {
@@ -53,6 +54,7 @@
           "web_search": "When enabled, the AI can search the web for up-to-date information. Uses Mistral's Agents API (beta). Requires a model that supports agents (mistral-medium-latest or mistral-large-latest).",
           "stt_language": "Language for Voxtral speech-to-text. Select 'Auto-detect' to let Voxtral determine the language automatically.",
           "tts_voice": "Voice used by Mistral TTS. 'Nova' is neutral and works well for home automation. All voices support any language.",
+          "tts_voice_override": "Custom voice ID bypassing the dropdown. Use this if your custom voice has no slug or is not discovered automatically. Paste the full voice UUID or slug here — it is sent directly to Mistral's API.",
           "tts_mode": "Stream: low-latency SSE WAV with sentence-level pipelining. Batch: single mp3 request, higher latency but smaller responses cache well. The tts.speak service always uses batch."
         }
       }
