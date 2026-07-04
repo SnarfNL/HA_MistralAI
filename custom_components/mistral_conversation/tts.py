@@ -109,6 +109,21 @@ class MistralTTSEntity(TextToSpeechEntity):
         self.hass = hass
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_tts"
+        # Populated once in async_added_to_hass from GET /v1/audio/voices.
+        # None means "not fetched yet" → async_get_supported_voices() falls
+        # back to the static TTS_VOICES list.
+        self._voice_cache: list[Voice] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Fetch the account's voice list once the entity is registered.
+
+        async_get_supported_voices() is a synchronous HA callback and cannot
+        await, so the network round-trip to GET /v1/audio/voices has to
+        happen here and be cached. Failures degrade gracefully to the static
+        list — see _async_fetch_voices.
+        """
+        await super().async_added_to_hass()
+        self._voice_cache = await self._async_fetch_voices()
 
     @property
     def _runtime(self):
@@ -146,8 +161,62 @@ class MistralTTSEntity(TextToSpeechEntity):
         return {"voice": voice}
 
     def async_get_supported_voices(self, language: str) -> list[Voice]:
-        """Return all available Mistral TTS voices for the Voice Assistants dialog."""
+        """Return available Mistral TTS voices for the Voice Assistants dialog.
+
+        Prefers the account voice list fetched in async_added_to_hass —
+        presets *and* custom voices, each with its human-readable name and
+        its real voice_id (a UUID). Falls back to the static TTS_VOICES list
+        if the fetch hasn't finished yet or failed.
+        """
+        if self._voice_cache is not None:
+            return self._voice_cache
         return [Voice(voice_id=v, name=v.replace("_", " ").title()) for v in TTS_VOICES]
+
+    async def _async_fetch_voices(self) -> list[Voice]:
+        """Fetch all voices (presets + custom) from the Mistral account.
+
+        GET /v1/audio/voices returns items carrying a separate ``id`` (UUID,
+        used as voice_id in synthesis) and ``name`` (human-readable, shown in
+        the picker). On any failure — network error, non-2xx, empty list —
+        this returns the static TTS_VOICES list so the picker is never empty.
+        """
+        static_fallback = [
+            Voice(voice_id=v, name=v.replace("_", " ").title()) for v in TTS_VOICES
+        ]
+        runtime = self._runtime
+        try:
+            async with runtime.session.get(
+                f"{MISTRAL_API_BASE}/audio/voices",
+                headers=runtime.headers,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status >= 400:
+                    body = await resp.text()
+                    _LOGGER.warning(
+                        "Mistral voices fetch HTTP %s — using static list. body=%s",
+                        resp.status,
+                        body,
+                    )
+                    return static_fallback
+                data = await resp.json()
+        except aiohttp.ClientError as err:
+            _LOGGER.warning(
+                "Mistral voices fetch failed (%s) — using static list.", err
+            )
+            return static_fallback
+
+        items = data.get("items") or []
+        voices = [
+            Voice(voice_id=item["id"], name=item.get("name") or item["id"])
+            for item in items
+            if item.get("id")
+        ]
+        if not voices:
+            _LOGGER.warning("Mistral voices list empty — using static list.")
+            return static_fallback
+
+        _LOGGER.debug("Loaded %d Mistral voices from account", len(voices))
+        return voices
 
     # ------------------------------------------------------------------
     # Batch path
