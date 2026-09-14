@@ -10,6 +10,7 @@ import asyncio
 import json
 import unittest
 from typing import Any, AsyncIterator
+from unittest.mock import patch
 
 from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
 
@@ -91,21 +92,68 @@ class FormatToolTests(unittest.TestCase):
         json.dumps(result)  # must not raise, regardless of what convert() returns
 
     def test_unconvertible_schema_value_is_sanitized_not_left_raw(self) -> None:
-        """Simulates convert() returning a schema with a non-JSON sentinel.
+        """Simulates convert() returning something that isn't a JSON schema.
 
         ``voluptuous_openapi.convert`` is mocked out in this test environment
-        (see ``_ha_stubs``), so it returns a ``MagicMock`` rather than a real
-        dict — standing in for any object type ``_sanitize`` has never seen,
-        including a future HA ``_Unsupported``-style sentinel. The fix must
-        sanitize whatever ``convert()`` hands back before it can reach the
-        outgoing payload.
+        (see ``_ha_stubs``), so a bare call returns a ``MagicMock`` rather
+        than a real dict — standing in for any non-dict value a schema
+        conversion could produce, including HA 2026.9's probatio/
+        voluptuous_openapi sentinel mismatch, which replaces the *entire*
+        schema with a bare string (see ``_schema_to_openapi``'s docstring).
+        The fix must never ship that value as `parameters` — Mistral
+        requires a JSON Schema object there, and a stray string produces a
+        422 with no exception anywhere in the HA log. It must fall back to
+        a valid, if empty, object schema instead.
         """
         tool = _FakeTool("broken_tool", "desc", parameters={})
         result = _format_tool(tool)
         params = result["function"]["parameters"]
-        # A MagicMock is not a JSON scalar/dict/list, so a correctly-applied
-        # _sanitize() must have coerced it to its repr() string already.
-        self.assertIsInstance(params, str)
+        self.assertEqual(params, {"type": "object", "properties": {}})
+        json.dumps(result)
+
+    def test_sentinel_replacing_whole_schema_falls_back_to_empty_object(self) -> None:
+        """Reproduces the exact failure mode reported after #36 shipped.
+
+        On HA 2026.9+, HA's custom_serializer returns probatio.UNSUPPORTED
+        for a non-selector node, voluptuous_openapi.convert() doesn't
+        recognize that as its own sentinel, and — because the serializer
+        runs on the top-level schema node too — returns the bare sentinel
+        as the WHOLE schema for nearly every tool, not just one field
+        within it. ``_sanitize()`` alone (the #36 fix) turned that into
+        the *valid JSON but wrong shape* string ``"UNSUPPORTED"``, which
+        Mistral rejected with a 422 on every tool call. The fix must
+        recognize a non-dict result and substitute an empty object schema.
+        """
+        tool = _FakeTool("basic-utilities__calculate", "Calculator", parameters={})
+
+        with patch("voluptuous_openapi.convert", return_value="UNSUPPORTED"):
+            result = _format_tool(tool)
+
+        self.assertEqual(
+            result["function"]["parameters"], {"type": "object", "properties": {}}
+        )
+        json.dumps(result)
+
+
+    def test_probatio_is_preferred_over_voluptuous_openapi_when_available(self) -> None:
+        """On HA 2026.9+, probatio.to_openapi() should be used, not
+        voluptuous_openapi.convert() — it's the library that actually
+        understands HA's own UNSUPPORTED sentinel correctly.
+        """
+        import types
+
+        fake_probatio = types.ModuleType("probatio")
+        fake_probatio.to_openapi = lambda schema, custom_serializer=None: {
+            "type": "object",
+            "properties": {"via": {"type": "string", "const": "probatio"}},
+        }
+        with patch.dict("sys.modules", {"probatio": fake_probatio}):
+            tool = _FakeTool("any_tool", "desc", parameters={})
+            result = _format_tool(tool)
+
+        self.assertEqual(
+            result["function"]["parameters"]["properties"]["via"]["const"], "probatio"
+        )
         json.dumps(result)
 
 

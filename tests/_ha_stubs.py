@@ -52,6 +52,7 @@ def _exception_class(name: str) -> type:
 _PATHS = [
     "aiohttp", "voluptuous", "voluptuous_openapi",
     "homeassistant", "homeassistant.components",
+    "homeassistant.components.ai_task",
     "homeassistant.components.conversation",
     "homeassistant.components.stt",
     "homeassistant.components.tts",
@@ -96,6 +97,14 @@ for _n in (
     "TtsAudioType", "Voice",
 ):
     setattr(_tts, _n, _empty_class(_n))
+
+# AITaskEntity is subclassed (MistralAITaskEntity(AITaskEntity)) so it must
+# be a real type. AITaskEntityFeature/GenDataTask/GenDataTaskResult are only
+# read as attributes, combined with `|`, or called with kwargs — the
+# module's own MagicMock auto-attributes already handle all of that.
+sys.modules["homeassistant.components.ai_task"].AITaskEntity = _empty_class(
+    "AITaskEntity"
+)
 
 _cfg = sys.modules["homeassistant.config_entries"]
 _cfg.ConfigFlow = _kwarg_class("ConfigFlow")
@@ -158,7 +167,7 @@ _HIERARCHY = {
         "components", "config_entries", "const", "core",
         "data_entry_flow", "exceptions", "helpers",
     ],
-    "homeassistant.components": ["conversation", "stt", "tts"],
+    "homeassistant.components": ["ai_task", "conversation", "stt", "tts"],
     "homeassistant.helpers": [
         "aiohttp_client", "config_validation", "device_registry",
         "entity_platform", "intent", "llm", "selector", "typing",
