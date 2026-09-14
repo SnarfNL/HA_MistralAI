@@ -15,6 +15,7 @@ from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
 
 from mistral_conversation.conversation import (  # noqa: E402
     _async_stream_delta,
+    _format_tool,
     _sanitize,
     _to_mistral_id,
 )
@@ -61,6 +62,51 @@ class SanitizeTests(unittest.TestCase):
     def test_output_is_json_serializable(self) -> None:
         data = {1: [None, True, 3.14, {"nested": "ok"}]}
         json.dumps(_sanitize(data))  # must not raise
+
+
+class _FakeTool:
+    """Stand-in for ``llm.Tool`` — only the attributes ``_format_tool`` reads."""
+
+    def __init__(self, name: str, description: str, parameters: Any) -> None:
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+
+
+class FormatToolTests(unittest.TestCase):
+    """``_format_tool`` must always return a JSON-serializable schema.
+
+    Regression coverage for #36: on HA 2026.9, ``voluptuous_openapi.convert()``
+    left an HA-internal sentinel object (``_Unsupported``) inside the
+    ``parameters`` schema for a selector type it couldn't represent. That
+    object reached aiohttp's JSON encoder unresolved and crashed every
+    Mistral request that offered a tool with such a parameter — a single
+    unresponsive/unrecognized selector in the exposed HA tools took the
+    whole conversation agent down.
+    """
+
+    def test_output_is_always_json_serializable(self) -> None:
+        tool = _FakeTool("any_tool", "desc", parameters={})
+        result = _format_tool(tool)
+        json.dumps(result)  # must not raise, regardless of what convert() returns
+
+    def test_unconvertible_schema_value_is_sanitized_not_left_raw(self) -> None:
+        """Simulates convert() returning a schema with a non-JSON sentinel.
+
+        ``voluptuous_openapi.convert`` is mocked out in this test environment
+        (see ``_ha_stubs``), so it returns a ``MagicMock`` rather than a real
+        dict — standing in for any object type ``_sanitize`` has never seen,
+        including a future HA ``_Unsupported``-style sentinel. The fix must
+        sanitize whatever ``convert()`` hands back before it can reach the
+        outgoing payload.
+        """
+        tool = _FakeTool("broken_tool", "desc", parameters={})
+        result = _format_tool(tool)
+        params = result["function"]["parameters"]
+        # A MagicMock is not a JSON scalar/dict/list, so a correctly-applied
+        # _sanitize() must have coerced it to its repr() string already.
+        self.assertIsInstance(params, str)
+        json.dumps(result)
 
 
 class ToMistralIdTests(unittest.TestCase):
