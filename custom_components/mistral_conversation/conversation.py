@@ -89,6 +89,14 @@ def _format_tool(tool: llm.Tool, custom_serializer: Any = None) -> dict[str, Any
         )
         parameters = {"type": "object", "properties": {}}
 
+    # voluptuous_openapi.convert() can leave HA-internal sentinel/placeholder
+    # objects in the schema for selector types it doesn't know how to
+    # represent (seen with HA 2026.9, #36: "Type is not JSON serializable:
+    # _Unsupported"). Sanitize here, at the source, so a malformed tool
+    # schema can never reach aiohttp's JSON encoder unresolved, even if a
+    # future caller forgets to sanitize the payload it ends up in.
+    parameters = _sanitize(parameters)
+
     return {
         "type": "function",
         "function": {
@@ -538,16 +546,27 @@ class MistralConversationEntity(ConversationEntity):
         captured_searches: list[str] = []
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
-            payload: dict[str, Any] = _sanitize({
+            raw_payload: dict[str, Any] = {
                 "model": model,
                 "messages": _convert_chat_log_to_messages(chat_log) + injected,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "stream": True,
-            })
+            }
             if tools:
-                payload["tools"] = tools
-                payload["tool_choice"] = "auto"
+                raw_payload["tools"] = tools
+                raw_payload["tool_choice"] = "auto"
+            # Sanitize AFTER tools are attached. Tool parameter schemas come
+            # from voluptuous_openapi.convert() via HA's LLM API and can
+            # contain HA-internal sentinel objects (e.g. a schema-conversion
+            # placeholder for a selector type _sanitize has never seen) for
+            # constructs voluptuous_openapi doesn't know how to represent.
+            # Sanitizing before attaching tools let such objects reach
+            # aiohttp's JSON encoder untouched, crashing every turn that
+            # exposed that tool (#36). Sanitizing the whole payload in one
+            # pass, after tools are in it, is the same defense already
+            # applied to messages/tool results elsewhere in this file.
+            payload: dict[str, Any] = _sanitize(raw_payload)
 
             captured_searches.clear()
             try:
