@@ -39,6 +39,7 @@ from .conversation import (
     _async_stream_delta,
     _convert_chat_log_to_messages,
     _sanitize,
+    _schema_to_openapi,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -125,13 +126,38 @@ class MistralAITaskEntity(AITaskEntity):
 
     @staticmethod
     def _structure_to_json_schema(structure) -> dict[str, Any] | None:
-        try:
-            from voluptuous_openapi import convert  # noqa: PLC0415
-            return convert(structure)
-        except ImportError:
-            return None
-        except (ValueError, TypeError):
-            pass  # HA selector types are unhashable — fall through to manual conversion
+        """Convert an HA voluptuous ``structure`` schema to a Mistral JSON schema.
+
+        Uses ``_schema_to_openapi()`` — the same probatio/voluptuous_openapi
+        conversion ``_format_tool()`` in conversation.py uses for Assist
+        tools — so selector features like ``multiple: true`` come through
+        as a JSON array instead of being silently flattened to a scalar
+        (#34), and so a probatio/voluptuous_openapi sentinel mismatch on
+        HA 2026.9+ can't replace the whole schema with a bare string
+        without HA_MistralAI noticing (the tool-schema version of that bug
+        was reported and fixed after #36 shipped).
+
+        ``_schema_to_openapi()`` only ever returns ``{"type": "object",
+        "properties": {}}`` when it couldn't build a real schema — either
+        because HA's selector instances aren't hashable for a plain
+        ``convert()``/``to_openapi()`` call, or because of the sentinel
+        mismatch above. In that case we fall through to a manual per-key
+        walk here, which knows enough about the common HA selector types
+        (including ``multiple``) to still produce a useful schema instead
+        of an empty one — needs no external schema library at all, just
+        ``voluptuous`` and HA's own ``selector`` module, both always
+        present.
+        """
+        from homeassistant.helpers import llm  # noqa: PLC0415
+
+        custom_serializer = getattr(llm, "selector_serializer", None) or getattr(
+            llm, "_selector_serializer", None
+        )
+        result = _schema_to_openapi(
+            structure, custom_serializer, log_context="ai_task structure"
+        )
+        if result != {"type": "object", "properties": {}}:
+            return result
 
         try:
             import voluptuous as vol  # noqa: PLC0415
@@ -158,6 +184,14 @@ class MistralAITaskEntity(AITaskEntity):
                 else:
                     prop = {"type": "string"}
 
+                # A `multiple: true` selector (of any of the above types)
+                # means the field is a list of that type, e.g.
+                # TextSelector(multiple=True) -> array of strings, not a
+                # single string (#34) — regardless of which scalar `prop`
+                # was picked above.
+                if getattr(validator, "config", None) and validator.config.get("multiple"):
+                    prop = {"type": "array", "items": prop}
+
                 if hasattr(key, "description") and key.description:
                     prop["description"] = key.description
                 properties[name] = prop
@@ -165,7 +199,7 @@ class MistralAITaskEntity(AITaskEntity):
             result: dict[str, Any] = {"type": "object", "properties": properties}
             if required:
                 result["required"] = required
-            return result
+            return _sanitize(result)
         except Exception as err:  # pylint: disable=broad-except
             _LOGGER.warning("Could not build JSON schema from HA selectors: %s", err)
             return None
@@ -238,13 +272,31 @@ class MistralAITaskEntity(AITaskEntity):
 
         if task.structure is not None:
             try:
-                return GenDataTaskResult(
-                    conversation_id=chat_log.conversation_id,
-                    data=json.loads(response_text),
-                )
+                parsed = json.loads(response_text)
             except json.JSONDecodeError:
                 _LOGGER.warning(
                     "Failed to parse AI task response as JSON: %s", response_text[:200]
+                )
+            else:
+                # "strict": False (Mistral doesn't support strict JSON-schema
+                # enforcement the way OpenAI does) means the model is free to
+                # add/rename/flatten properties instead of the request
+                # failing. Validate against the requested structure so a
+                # mismatch is a visible warning instead of silently-wrong
+                # data reaching the caller (#34). Never raises — this is
+                # diagnostic only, the parsed data is still returned as-is.
+                try:
+                    task.structure(parsed)
+                except Exception as err:  # pylint: disable=broad-except
+                    _LOGGER.warning(
+                        "AI task response does not match requested structure: %s "
+                        "(response: %s)",
+                        err,
+                        response_text[:200],
+                    )
+                return GenDataTaskResult(
+                    conversation_id=chat_log.conversation_id,
+                    data=parsed,
                 )
 
         return GenDataTaskResult(

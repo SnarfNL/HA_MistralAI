@@ -77,26 +77,69 @@ def _sanitize(obj: Any) -> Any:
 # Tool helpers
 # ---------------------------------------------------------------------------
 
+def _schema_to_openapi(
+    schema: Any,
+    custom_serializer: Any = None,
+    *,
+    log_context: str = "schema",
+) -> dict[str, Any]:
+    """Convert a voluptuous/HA-selector schema to an OpenAPI/JSON-Schema dict.
+
+    HA core 2026.9+ serializes schemas with ``probatio`` instead of
+    ``voluptuous_openapi``. HA's own custom_serializer (``llm.selector_serializer``,
+    what ``chat_log.llm_api.custom_serializer`` hands us) now returns
+    ``probatio.UNSUPPORTED`` for any node it doesn't recognize as a
+    selector. ``voluptuous_openapi.convert()`` checks a serializer's return
+    value against its *own* ``UNSUPPORTED`` sentinel first — a different
+    object — so it takes ``probatio.UNSUPPORTED`` as a valid serialized
+    value instead of falling back to its normal conversion. Because the
+    custom_serializer runs on every node including the top-level schema
+    itself, this doesn't corrupt one odd field: it replaces the *entire*
+    schema with the bare sentinel for every tool that isn't itself a single
+    selector (i.e. nearly all of them) — see #36's follow-up report.
+    ``probatio.to_openapi()`` checks against probatio's own sentinel
+    correctly and is tried first; ``voluptuous_openapi.convert()`` remains
+    the fallback for HA versions that never shipped probatio.
+
+    The result is always sanitized — a leftover non-JSON object anywhere
+    inside it degrades to a harmless string instead of reaching aiohttp's
+    JSON encoder unresolved (the original #36 crash) — and is always a
+    dict: if serialization still produces something else (a bare sentinel,
+    an unexpected type), ``empty_schema`` is returned instead of shipping a
+    schema Mistral will silently reject with a 422 that never surfaces in
+    the HA log as an exception.
+    """
+    empty_schema: dict[str, Any] = {"type": "object", "properties": {}}
+
+    try:
+        try:
+            from probatio import to_openapi as convert  # noqa: PLC0415
+        except ImportError:
+            from voluptuous_openapi import convert  # noqa: PLC0415
+        result = convert(schema, custom_serializer=custom_serializer)
+    except Exception:  # pylint: disable=broad-except
+        _LOGGER.debug("Could not serialize %s, using empty schema", log_context)
+        return empty_schema
+
+    result = _sanitize(result)
+    if not isinstance(result, dict):
+        _LOGGER.warning(
+            "%s serialized to a non-dict (%r) instead of a JSON schema object "
+            "— using empty schema",
+            log_context,
+            result,
+        )
+        return empty_schema
+    return result
+
+
 def _format_tool(tool: llm.Tool, custom_serializer: Any = None) -> dict[str, Any]:
     """Convert an HA LLM tool to Mistral function-calling format."""
-    try:
-        from voluptuous_openapi import convert
-        parameters = convert(tool.parameters, custom_serializer=custom_serializer)
-    except Exception:  # pylint: disable=broad-except
-        _LOGGER.debug(
-            "Could not serialize tool parameters for '%s', using empty schema",
-            tool.name,
-        )
-        parameters = {"type": "object", "properties": {}}
-
-    # voluptuous_openapi.convert() can leave HA-internal sentinel/placeholder
-    # objects in the schema for selector types it doesn't know how to
-    # represent (seen with HA 2026.9, #36: "Type is not JSON serializable:
-    # _Unsupported"). Sanitize here, at the source, so a malformed tool
-    # schema can never reach aiohttp's JSON encoder unresolved, even if a
-    # future caller forgets to sanitize the payload it ends up in.
-    parameters = _sanitize(parameters)
-
+    parameters = _schema_to_openapi(
+        tool.parameters,
+        custom_serializer,
+        log_context=f"tool parameters for '{tool.name}'",
+    )
     return {
         "type": "function",
         "function": {

@@ -175,40 +175,65 @@ class MistralTTSEntity(TextToSpeechEntity):
     async def _async_fetch_voices(self) -> list[Voice]:
         """Fetch all voices (presets + custom) from the Mistral account.
 
-        GET /v1/audio/voices returns items carrying a separate ``id`` (UUID,
-        used as voice_id in synthesis) and ``name`` (human-readable, shown in
-        the picker). On any failure — network error, non-2xx, empty list —
-        this returns the static TTS_VOICES list so the picker is never empty.
+        GET /v1/audio/voices is paginated — the default page size can be as
+        low as 10 — and was being called with no ``limit``/``offset``, so
+        only the first page ever came back. Accounts with more than one
+        page of voices (any account with >10 preset + custom voices
+        combined) would silently lose everything after the first page: a
+        non-English preset or a custom voice could be missing from the
+        Voice Assistants picker even though it exists on the account and
+        even though the integration's own Configure page — which reads the
+        saved default option, not a live fetch — could still show/save it
+        (#32, #33). This loops with ``limit``/``offset`` until ``total``
+        items are collected.
+
+        Each item carries a separate ``id`` (UUID, used as voice_id in
+        synthesis) and ``name`` (human-readable, shown in the picker). On
+        any failure — network error, non-2xx, empty list — this returns the
+        static TTS_VOICES list so the picker is never empty.
         """
         static_fallback = [
             Voice(voice_id=v, name=v.replace("_", " ").title()) for v in TTS_VOICES
         ]
         runtime = self._runtime
+        all_items: list[dict[str, Any]] = []
+        limit = 100
+        offset = 0
+
         try:
-            async with runtime.session.get(
-                f"{MISTRAL_API_BASE}/audio/voices",
-                headers=runtime.headers,
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status >= 400:
-                    body = await resp.text()
-                    _LOGGER.warning(
-                        "Mistral voices fetch HTTP %s — using static list. body=%s",
-                        resp.status,
-                        body,
-                    )
-                    return static_fallback
-                data = await resp.json()
+            while True:
+                async with runtime.session.get(
+                    f"{MISTRAL_API_BASE}/audio/voices",
+                    headers=runtime.headers,
+                    params={"limit": limit, "offset": offset},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status >= 400:
+                        body = await resp.text()
+                        _LOGGER.warning(
+                            "Mistral voices fetch HTTP %s — using static list. body=%s",
+                            resp.status,
+                            body,
+                        )
+                        return static_fallback
+                    data = await resp.json()
+
+                items = data.get("items") or []
+                all_items.extend(items)
+
+                total = data.get("total", len(all_items))
+                offset += len(items)
+                if not items or offset >= total:
+                    break
         except aiohttp.ClientError as err:
             _LOGGER.warning(
                 "Mistral voices fetch failed (%s) — using static list.", err
             )
             return static_fallback
 
-        items = data.get("items") or []
         voices = [
             Voice(voice_id=item["id"], name=item.get("name") or item["id"])
-            for item in items
+            for item in all_items
             if item.get("id")
         ]
         if not voices:
