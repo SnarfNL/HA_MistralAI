@@ -147,15 +147,22 @@ Click the integration → **Configure** to change settings.
 | **TTS mode** | `Streaming` | `Streaming` (SSE WAV with sentence-level pipelining) or `Batch` (single MP3 request) |
 ### Available models
 
-| Model | Speed | Cost | Best for |
-|---|---|---|---|
-| `ministral-8b-latest` ⭐ | ★★★★★ | $ | Home automation commands — fast, accurate, cheap |
-| `ministral-3b-latest` | ★★★★★ | $ | Ultra-simple commands, lowest latency |
-| `mistral-small-latest` | ★★★★ | $$ | Balanced: quality and speed |
-| `mistral-large-latest` | ★★★ | $$$$ | Complex reasoning, long conversations |
-| `open-mistral-nemo` | ★★★★ | $ | Open-source alternative |
+Verified against Mistral's model lineup, September 2026. All entries use Mistral's `-latest` aliases, which track the current model automatically as Mistral ships new versions (e.g. `mistral-large-latest` now serves Mistral Large 3).
+
+| Model | Speed | Cost | Free tier | Best for |
+|---|---|---|---|---|
+| `ministral-8b-latest` ⭐ | ★★★★★ | $ | ✅ | Home automation commands — fast, accurate, cheap |
+| `ministral-3b-latest` | ★★★★★ | $ | ✅ | Ultra-simple commands, lowest latency |
+| `ministral-14b-latest` 🆕 | ★★★★ | $ | ✅ | New (Dec 2025). Strongest of the small edge models |
+| `mistral-small-latest` | ★★★★ | $$ | ✅ | Balanced: quality and speed |
+| `mistral-medium-latest` | ★★★ | $$$ | ⚠️ | Required for web search; heavier, often rate-limited on free API keys |
+| `mistral-large-latest` | ★★★ | $$$$ | ⚠️ | Complex reasoning, long conversations; heavier, often rate-limited on free API keys |
 
 > **Recommendation:** Start with `ministral-8b-latest`. It has excellent instruction-following, handles structured JSON output reliably (needed for device control), and costs a fraction of larger models.
+>
+> **About the "Free tier" column:** Mistral's free/Experiment API tier gives rate-limited trial access to all models — Mistral doesn't publish an official per-model block list. In practice, though, Medium and Large are the ones most likely to hit those limits or get rejected on a free-tier key, since they're the most expensive per token. If you're on a free key and see errors on Medium or Large, that's most likely why — check your usage tier at [admin.mistral.ai](https://admin.mistral.ai/plateforme/limits).
+>
+> **Removed:** `open-mistral-nemo` (Mistral Nemo 12B) has been deprecated and retired by Mistral and no longer works — switch to `ministral-8b-latest` or `ministral-3b-latest` if your config still uses it.
 
 ### System prompt
 
