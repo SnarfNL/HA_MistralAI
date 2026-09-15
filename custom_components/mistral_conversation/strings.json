@@ -46,7 +46,7 @@
           "tts_mode": "Text-to-speech mode"
         },
         "data_description": {
-          "model": "Which Mistral model to use. Ministral-8b is recommended for home automation commands: fast, cost-effective and great at instruction-following.",
+          "model": "Which Mistral model to use. Ministral-8b is recommended for home automation commands: fast, cost-effective and great at instruction-following. Ministral-14b is new (Dec 2025) and the strongest of the small edge models. Note: on a free/Experiment-tier API key, the pricier models (Medium, Large) are the ones most likely to be rate-limited or rejected — see the note next to each model below.",
           "prompt": "Instructions for the AI. Supports Jinja2 templates — for example, the HA instance name via ha_name, or the current date via now(). See the README for the full list of variables.",
           "llm_hass_api": "Select which Home Assistant APIs the AI can use to control your devices. 'Assist' exposes the same entities as the built-in voice assistant.",
           "temperature": "0 = deterministic, 1 = creative. Mistral range: 0.0–1.0.",
@@ -73,6 +73,16 @@
       "options": {
         "model": "Let the model decide (recommended)",
         "always": "Always search (legacy, slower)"
+      }
+    },
+    "model": {
+      "options": {
+        "ministral-3b-latest": "Ministral 3B — fastest & cheapest, simple commands (free-tier friendly)",
+        "ministral-8b-latest": "Ministral 8B — recommended for HA (free-tier friendly)",
+        "ministral-14b-latest": "Ministral 14B — new, strongest small model (free-tier friendly)",
+        "mistral-small-latest": "Mistral Small — balanced speed & quality (free-tier friendly)",
+        "mistral-medium-latest": "Mistral Medium — needed for web search; ⚠️ paid tier, often rate-limited on free API keys",
+        "mistral-large-latest": "Mistral Large — most capable; ⚠️ paid tier, often rate-limited on free API keys"
       }
     }
   }

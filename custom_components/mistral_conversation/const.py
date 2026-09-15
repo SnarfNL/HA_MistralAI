@@ -74,21 +74,40 @@ DEFAULT_PROMPT = (
 # ---------------------------------------------------------------------------
 # Available chat models
 # Ordered by suitability for home automation (fast + instruction-following first)
+#
+# Status verified against Mistral's model lifecycle docs, September 2026:
+#   - "-latest" aliases always resolve to Mistral's current model for that
+#     name, so they track new releases automatically (e.g. mistral-large-latest
+#     now serves Mistral Large 3, ministral-8b-latest now serves the Ministral 3
+#     generation). Only dated/pinned model IDs (e.g. mistral-medium-2505) go
+#     stale — avoid pinning those in this list.
+#   - "open-mistral-nemo" (Mistral Nemo 12B) is deprecated & retired per
+#     Mistral's model lifecycle table and has been removed from this list.
+#     Existing configs still set to it should switch to ministral-8b-latest
+#     or ministral-3b-latest.
+#   - "ministral-14b-latest" (Ministral 3 14B, released December 2025) is new:
+#     the largest model in the Ministral 3 edge family, comparable in quality
+#     to the old Mistral Small 3.2 but still cheap and fast.
+#   - Free/"Experiment" tier API keys get rate-limited trial access to all
+#     models per Mistral's own docs, but Mistral does not publish which
+#     models get throttled or blocked first, or exactly how hard. In
+#     practice the pricier models (Medium, Large) are the ones most likely
+#     to hit those limits on a free-tier key — see the model dropdown in the
+#     options dialog for a per-model note.
 # ---------------------------------------------------------------------------
 CHAT_MODELS = [
     "ministral-8b-latest",  # Best for HA: fast, great instruction following, low cost
     "ministral-3b-latest",  # Ultra-fast, lightweight, simple commands
-    "mistral-small-latest",  # Balanced: speed + quality
-    "mistral-medium-latest",  # Required for web search via Agents API
-    "mistral-large-latest",  # Most capable, best for complex reasoning
-    "open-mistral-nemo",  # Open-source, compact
+    "ministral-14b-latest",  # New (Ministral 3, Dec 2025): strongest small/edge model
+    "mistral-small-latest",  # Balanced: speed + quality (Mistral Small 4)
+    "mistral-medium-latest",  # Required for web search via Agents API; pricier — often rate-limited on free-tier keys
+    "mistral-large-latest",  # Most capable, best for complex reasoning; pricier — often rate-limited on free-tier keys
 ]
 
 # Models that support the Agents/Conversations API (required for web search)
 AGENT_CAPABLE_MODELS = [
     "mistral-small-latest",
     "mistral-medium-latest",
-    "mistral-medium-2505",
     "mistral-large-latest",
 ]
 
