@@ -10,5 +10,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/SnarfNL/HA_MistralAI/issues",
   "requirements": [],
-  "version": "2026.09.03"
+  "version": "2026.09.04"
 }
