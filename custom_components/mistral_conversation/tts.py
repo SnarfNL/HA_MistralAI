@@ -12,7 +12,9 @@ Two operating modes selectable via integration options (CONF_TTS_MODE):
   starts with the header of the first sentence that actually delivers audio
   (so a failing sentence 0 no longer leaves the stream without a header),
   followed by raw PCM samples from all sentences. If no sentence delivers
-  audio, a HomeAssistantError is raised instead of returning an empty stream.
+  audio although sentences were sent to Mistral, a HomeAssistantError is
+  raised instead of returning an empty stream. If there was nothing to send
+  (e.g. an emoji-only reply), the stream simply ends.
   The pipeline keeps up to TTS_MAX_INFLIGHT_SENTENCES Mistral requests in
   flight simultaneously while preserving playback order.
 
@@ -395,8 +397,9 @@ class MistralTTSEntity(TextToSpeechEntity):
           audio; later headers are ignored), then the PCM samples of all
           sentences. A brief silence, sized from that header, is inserted
           only between sentences that really delivered audio. A failed
-          sentence is skipped; if no sentence delivers any audio, a
-          HomeAssistantError is raised.
+          sentence is skipped; if sentences were sent but none delivered
+          any audio, a HomeAssistantError is raised. If no sentence was sent
+          at all (e.g. emoji-only reply), the stream ends silently.
         """
         sem = asyncio.Semaphore(TTS_MAX_INFLIGHT_SENTENCES)
         outer_q: asyncio.Queue[asyncio.Queue[Any] | None] = asyncio.Queue()
@@ -467,16 +470,20 @@ class MistralTTSEntity(TextToSpeechEntity):
             silence = _INTER_SENTENCE_SILENCE
             sentences_with_audio = 0
             last_error: BaseException | None = None
+            sentences_sent = 0
             while True:
                 inner = await outer_q.get()
                 if inner is None:
-                    if not header_sent:
+                    # Only an error if sentences were actually sent to Mistral;
+                    # nothing to speak (e.g. emoji-only reply) ends silently.
+                    if sentences_sent and not header_sent:
                         detail = f" (last error: {last_error})" if last_error else ""
                         raise HomeAssistantError(
                             "Mistral TTS returned no audio for any sentence"
                             f"{detail}. Check the voice ID and the Home Assistant log."
                         )
                     return
+                sentences_sent += 1
                 sentence_header: bytes | None = None
                 sentence_has_audio = False
                 while True:

@@ -133,6 +133,17 @@ class PipelinedStreamTests(unittest.IsolatedAsyncioTestCase):
             await self._run({t: ("fail",) for t in TEXTS})
         self.assertIn("no audio", str(ctx.exception))
 
+    async def test_no_sentences_sent_ends_silently(self) -> None:
+        entity = _make_entity()
+
+        async def never_called(text, voice, out_queue, idx=None):
+            raise AssertionError("no sentence should be sent to Mistral")
+
+        entity._stream_one_sentence_into = never_called
+        # Emoji-only reply: the segmenter finds nothing speakable to send.
+        out = await _collect(entity, "🌿✨💫🌹🌷🌸💐🌼🌻🌺.")
+        self.assertEqual(out, b"")
+
     async def test_silence_length_follows_header(self) -> None:
         header_16k = _wav_header(sample_rate=16000)
         entity = _make_entity()
