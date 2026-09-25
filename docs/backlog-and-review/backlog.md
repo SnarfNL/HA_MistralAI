@@ -255,20 +255,25 @@ Als beheerder wil ik meerdere Mistral-agents met elk een eigen model, prompt en 
 
 ---
 
-## MA-13 · Eigen voices als standaardstem
+## MA-13 · Stemlijst van het account, met verversknop
 
 Labels: `backlog` `type:feature` `priority:should` `release:2-ha-native` `effort:S`
 Status: open
 
-Als beheerder wil ik een voice die ik in Mistral Studio heb gemaakt als standaardstem kiezen, zodat ook `tts.speak` in automatiseringen mijn stem gebruikt.
+Als beheerder wil ik dat de stemkiezer in Instellingen → Spraakassistenten de stemmen van mijn Mistral-account toont, ook de eigen voices uit Mistral Studio, en dat ik die lijst kan verversen als ik een nieuwe voice maak.
+
+De stem kies je alleen in de assistent-instellingen (of met de optie `voice` van `tts.speak`); het optiescherm van de integratie heeft geen stemveld meer (zie #75).
 
 **Acceptatiecriteria**
 
-- [ ] De voice-dropdown in de opties toont de voices van het account (naam als label, ID als waarde).
-- [ ] Is ophalen niet mogelijk, dan valt de dropdown terug op de statische lijst en staat vrije invoer (`custom_value`) toe.
-- [ ] De voice-cache wordt ververst bij het openen van de opties en elke 24 uur.
+- [ ] De kiezer toont de voices van het account: presets en eigen voices (naam als label, ID als waarde).
+- [ ] Een knop “Voices verversen” (categorie configuratie) op het apparaat Mistral AI TTS haalt de lijst opnieuw op, zonder Home Assistant te herstarten.
+- [ ] Mislukt het verversen, dan blijft de laatste goede lijst staan.
+- [ ] Tot de eerste geslaagde ophaalactie toont de kiezer de statische presetlijst.
+- [ ] Tests: een eigen voice uit de API verschijnt in de kiezer; een mislukte verversing behoudt de vorige lijst; vóór de eerste ophaalactie geldt de statische lijst.
+- [ ] CHANGELOG.md heeft een regel onder `### Unreleased`.
 
-**Techniek:** open vraag: werkt `voice_id` nog met preset-slugs of alleen met UUID’s?
+**Techniek:** het ophalen bestaat al (`_async_fetch_voices`, gepagineerd) maar draait nu één keer in `async_added_to_hass`; deze story voegt een `button`-platform en het verversen toe. Preset-slugs zoals `en_paul_neutral` werken als `voice_id` (getest met `tts.speak`). Geen vrije invoer en geen 24-uurs timer. Besluit over Wyoming: `docs/adr/0001-tts-stays-in-the-integration.md`.
 
 **Schatting:** Claude 30 min + test 15 min · ≈ 0,5–1,5 M tokens
 

@@ -42,7 +42,6 @@
           "web_search_mode": "Web search routing",
           "web_search_trigger": "Web search trigger phrases (optional)",
           "stt_language": "Speech recognition language (STT)",
-          "tts_voice": "Text-to-speech voice",
           "tts_mode": "Text-to-speech mode"
         },
         "data_description": {
@@ -56,7 +55,6 @@
           "web_search_mode": "'Let the model decide' (recommended): the AI searches only when it decides it needs to, and can still control your devices in the same turn. 'Always search': every request goes through the Agents API — slower, and device control does not work on those turns.",
           "web_search_trigger": "Optional. Comma-separated phrases, for example 'search for, look up, google'. When set, these take precedence over the routing mode: only commands starting with one of these phrases search the web (the phrase itself is removed from the query), and all other commands never search. Leave empty to let the routing mode decide.",
           "stt_language": "Language for Voxtral speech-to-text. Select 'Auto-detect' to let Voxtral determine the language automatically.",
-          "tts_voice": "Default voice used by Mistral TTS, if none is configured in the assistant settings.",
           "tts_mode": "Stream: low-latency SSE WAV with sentence-level pipelining. Batch: single mp3 request, higher latency but smaller responses cache well. The tts.speak service always uses batch."
         }
       }

@@ -14,7 +14,6 @@ CONF_WEB_SEARCH = "web_search"
 CONF_WEB_SEARCH_MODE = "web_search_mode"
 CONF_WEB_SEARCH_TRIGGER = "web_search_trigger"
 CONF_STT_LANGUAGE = "stt_language"
-CONF_TTS_VOICE = "tts_voice"
 CONF_TTS_MODE = "tts_mode"
 # Note: device control uses HA's native CONF_LLM_HASS_API from homeassistant.const
 

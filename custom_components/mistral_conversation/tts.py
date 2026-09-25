@@ -57,7 +57,6 @@ from ._streaming import (
 )
 from .const import (
     CONF_TTS_MODE,
-    CONF_TTS_VOICE,
     DEFAULT_TTS_MODE,
     DEFAULT_TTS_VOICE,
     DOMAIN,
@@ -125,10 +124,9 @@ class MistralTTSEntity(TextToSpeechEntity):
     Voice selection priority (highest to lowest):
       1. Voice Assistants dialog (Settings → Voice Assistants → Text-to-speech
          voice). HA passes this selection via options["voice"] in each call.
-      2. Integration default (Settings → Devices & Services → Configure →
-         Text-to-speech voice). Used as fallback when no voice is chosen in
-         the Voice Assistants dialog or when TTS is called from an automation
-         without an explicit voice option.
+      2. Built-in DEFAULT_TTS_VOICE. Used as fallback when no voice is chosen
+         in the Voice Assistants dialog or when TTS is called from an
+         automation without an explicit voice option.
     """
 
     _attr_has_entity_name = True
@@ -185,9 +183,8 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     @property
     def default_options(self) -> dict[str, Any]:
-        """Return the integration-configured default voice as fallback."""
-        voice = self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
-        return {"voice": voice}
+        """Return the built-in default voice as fallback."""
+        return {"voice": DEFAULT_TTS_VOICE}
 
     def async_get_supported_voices(self, language: str) -> list[Voice]:
         """Return available Mistral TTS voices for the Voice Assistants dialog.
@@ -286,10 +283,10 @@ class MistralTTSEntity(TextToSpeechEntity):
     ) -> TtsAudioType:
         """Synthesise speech via the Mistral audio/speech endpoint.
 
-        Voice priority: options["voice"] (from Voice Assistants dialog) wins
-        over the integration default (CONF_TTS_VOICE).
+        Voice priority: options["voice"] (from the Voice Assistants dialog or
+        a tts.speak call) wins over the built-in DEFAULT_TTS_VOICE.
         """
-        voice = options.get("voice") or self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
+        voice = options.get("voice") or DEFAULT_TTS_VOICE
 
         payload = {
             "model": TTS_MODEL,
@@ -355,7 +352,7 @@ class MistralTTSEntity(TextToSpeechEntity):
         if mode == TTS_MODE_BATCH:
             return await super().async_stream_tts_audio(request)
 
-        voice = request.options.get("voice") or self._entry.options.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE)
+        voice = request.options.get("voice") or DEFAULT_TTS_VOICE
 
         return TTSAudioResponse(
             extension="wav",
