@@ -49,8 +49,9 @@ Write it in English, with: the problem, what changed (plain language, no jargon)
 ## Code conventions
 
 - Any text shown in the UI goes in `strings.json` AND all three files in `translations/` (en, nl, fr). Keep keys in sync.
-- Calls to the Mistral API go through `mistral_request()` in `_api.py`. It handles timeouts, reauth on 401, retries on 429 and translated errors in one place. Raise user-facing errors with `mistral_error("<key>")`; every key lives in the `exceptions` section of strings.json and all three translations.
-- Anything else that does network I/O catches `(aiohttp.ClientError, TimeoutError)` — aiohttp raises `TimeoutError`, which is not a `ClientError`.
+- Calls to the Mistral API go through `mistral_request()` in `_api.py`. It handles timeouts, reauth on 401, retries on 429 and translated errors in one place. Read the response with `read_json()` or wrap a stream in `translate_stream()`; code inside the `async with` block is not translated, so errors from HA tools are never blamed on Mistral. Raise user-facing errors with `mistral_error("<key>")`; every key lives in the `exceptions` section of strings.json and all three translations.
+- The only exceptions are the API-key checks in `async_setup_entry` and the config flow: they run before the entry's runtime data exists, call the session directly and catch `(aiohttp.ClientError, TimeoutError)` — aiohttp raises `TimeoutError`, which is not a `ClientError`.
+- Never log or format an aiohttp exception with `%r` or `!r`: the repr of `ClientResponseError` contains the request headers, including the API key. Use `describe_error(err)`.
 - Never put raw API response bodies in errors shown to users; log them instead.
 - Target Python 3.13 and the minimum HA version in hacs.json.
 

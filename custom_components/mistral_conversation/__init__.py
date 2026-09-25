@@ -13,6 +13,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from ._api import describe_error
 from ._web_search import WebSearchConversations
 from .const import DOMAIN, MISTRAL_API_BASE
 
@@ -58,7 +59,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 raise ConfigEntryAuthFailed("Invalid Mistral AI API key")
             resp.raise_for_status()
     except (aiohttp.ClientError, TimeoutError) as err:
-        raise ConfigEntryNotReady(f"Cannot connect to Mistral AI: {err!r}") from err
+        # Never repr() an aiohttp error: it would include the API key header.
+        raise ConfigEntryNotReady(
+            f"Cannot connect to Mistral AI: {describe_error(err)}"
+        ) from err
 
     runtime = MistralRuntimeData(session=session, headers=headers)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime

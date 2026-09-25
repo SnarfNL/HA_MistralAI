@@ -46,6 +46,10 @@ class _FakeSession:
     def __init__(self) -> None:
         self.payloads: list[dict] = []
 
+    def request(self, method, url, **kwargs):
+        """``aiohttp.ClientSession.request``: dispatch on the HTTP verb."""
+        return getattr(self, method.lower())(url, **kwargs)
+
     def post(self, url, *, json, **kwargs):
         self.payloads.append(json)
         return _FakeResponse()

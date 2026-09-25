@@ -57,6 +57,9 @@ class _RaisingSession:
 
     post = get
 
+    def request(self, method, *args, **kwargs):
+        raise self.error
+
 
 FAILURES = (TimeoutError(), aiohttp.ClientError("down"))
 

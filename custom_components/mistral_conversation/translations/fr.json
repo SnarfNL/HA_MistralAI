@@ -114,6 +114,9 @@
     },
     "unexpected_error": {
       "message": "Un problème est survenu lors de l'échange avec Mistral."
+    },
+    "invalid_response": {
+      "message": "Mistral a renvoyé une réponse illisible."
     }
   }
 }

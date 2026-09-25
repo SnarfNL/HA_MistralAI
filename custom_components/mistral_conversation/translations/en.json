@@ -114,6 +114,9 @@
     },
     "unexpected_error": {
       "message": "Something went wrong talking to Mistral."
+    },
+    "invalid_response": {
+      "message": "Mistral returned an answer that could not be read."
     }
   }
 }

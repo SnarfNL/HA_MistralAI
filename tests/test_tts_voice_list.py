@@ -48,6 +48,10 @@ class _Session:
         self.outcomes = list(outcomes)
         self.calls = 0
 
+    def request(self, method, url, **kwargs):
+        """``aiohttp.ClientSession.request``: dispatch on the HTTP verb."""
+        return getattr(self, method.lower())(url, **kwargs)
+
     def get(self, url, **kwargs):
         self.calls += 1
         outcome = self.outcomes.pop(0)

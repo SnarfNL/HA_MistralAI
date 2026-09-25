@@ -49,7 +49,13 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._api import mistral_error, mistral_request
+from ._api import (
+    describe_error,
+    mistral_error,
+    mistral_request,
+    read_json,
+    translate_stream,
+)
 from ._streaming import (
     has_speakable_content,
     iter_sse_audio_chunks,
@@ -161,10 +167,15 @@ class MistralTTSEntity(TextToSpeechEntity):
         await, so the network round-trip to GET /v1/audio/voices has to
         happen here and be cached. If it fails the picker stays empty until
         the "Refresh voices" button succeeds.
+
+        The fetch runs in the background: rate-limit retries must not hold up
+        Home Assistant's TTS platform setup.
         """
         await super().async_added_to_hass()
         self._runtime.tts_entity = self
-        await self.async_refresh_voices()
+        self._entry.async_create_background_task(
+            self.hass, self.async_refresh_voices(), "mistral_fetch_voices"
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         """Unregister so the refresh button never talks to a removed entity."""
@@ -246,8 +257,10 @@ class MistralTTSEntity(TextToSpeechEntity):
                     f"{MISTRAL_API_BASE}/audio/voices",
                     params={"limit": limit, "offset": offset},
                     timeout=10,
+                    # A failed fetch is not fatal: the last good list stays.
+                    log_level=logging.WARNING,
                 ) as resp:
-                    data = await resp.json()
+                    data = await read_json(resp)
 
                 items = data.get("items") or []
                 all_items.extend(items)
@@ -257,7 +270,7 @@ class MistralTTSEntity(TextToSpeechEntity):
                 if not items or offset >= total:
                     break
         except HomeAssistantError as err:
-            _LOGGER.warning("Mistral voices fetch failed (%r).", err)
+            _LOGGER.warning("Mistral voices fetch failed (%s).", describe_error(err))
             return None
 
         voices = [
@@ -304,9 +317,10 @@ class MistralTTSEntity(TextToSpeechEntity):
             f"{MISTRAL_API_BASE}/audio/speech",
             json=payload,
             timeout=30,
+            log_context=f"voice={voice}",
         ) as resp:
             # Mistral returns JSON with base64-encoded MP3 in audio_data
-            data = await resp.json()
+            data = await read_json(resp)
         audio_b64 = data.get("audio_data", "")
         if not audio_b64:
             _LOGGER.error("Mistral TTS returned empty audio_data (voice=%s)", voice)
@@ -562,8 +576,9 @@ class MistralTTSEntity(TextToSpeechEntity):
             f"{MISTRAL_API_BASE}/audio/speech",
             json=payload,
             timeout=60,
+            log_context=f"voice={voice}",
         ) as resp:
-            async for audio in iter_sse_audio_chunks(resp):
+            async for audio in translate_stream(iter_sse_audio_chunks(resp)):
                 if not first_chunk_logged:
                     # Time from POST to first decoded audio bytes — the
                     # actual TTFA contributed by Mistral. Logged before
