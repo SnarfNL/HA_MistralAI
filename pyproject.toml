@@ -4,3 +4,17 @@ line-length = 88
 
 # Minimal setup: ruff's default rules (pyflakes + a few pycodestyle errors).
 # Stricter rules can be added later under [tool.ruff.lint].
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["custom_components.mistral_conversation"]
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+check_untyped_defs = true
+files = ["custom_components/mistral_conversation"]
