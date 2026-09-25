@@ -60,10 +60,5 @@ Write it in English, with: the problem, what changed (plain language, no jargon)
 - Streaming TTS is WAV 24 kHz / 16-bit / mono; per-sentence requests are stitched into one stream (one RIFF header, then raw PCM).
 
 ## Planning and vocabulary
-<<<<<<< Updated upstream
-- Backlog: GitHub Issues with label `backlog` (source: docs/backlog.md). Reference the issue in every PR (`Closes #N`).
-- Vocabulary: CONTEXT.md. Background: docs/review/2026-09-review.md.
-=======
-   - Backlog: GitHub Issues with label `backlog` (source: docs/backlog.md). Reference the issue in every PR (`Closes #N`).
-   - Vocabulary: CONTEXT.md. Background: docs/review/2026-09-review.md.
->>>>>>> Stashed changes
+- Backlog: GitHub Issues with label `backlog` (source: docs/backlog-and-review/backlog.md). Reference the issue in every PR (`Closes #N`).
+- Vocabulary: CONTEXT.md. Background: docs/backlog-and-review/2026-09-review.md.
