@@ -62,3 +62,14 @@ Write it in Dutch, with: the problem, what changed (plain language, no jargon), 
 ## Planning and vocabulary
 - Backlog: GitHub Issues with label `backlog` (source: docs/backlog-and-review/backlog.md). Reference the issue in every PR (`Closes #N`).
 - Vocabulary: CONTEXT.md. Background: docs/backlog-and-review/2026-09-review.md.
+
+## Agent skills
+
+### Issue tracker
+Issues are tracked in GitHub Issues (SnarfNL/HA_MistralAI) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
