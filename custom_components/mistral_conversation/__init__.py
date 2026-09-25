@@ -57,8 +57,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if resp.status == 401:
                 raise ConfigEntryAuthFailed("Invalid Mistral AI API key")
             resp.raise_for_status()
-    except aiohttp.ClientError as err:
-        raise ConfigEntryNotReady(f"Cannot connect to Mistral AI: {err}") from err
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise ConfigEntryNotReady(f"Cannot connect to Mistral AI: {err!r}") from err
 
     runtime = MistralRuntimeData(session=session, headers=headers)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime

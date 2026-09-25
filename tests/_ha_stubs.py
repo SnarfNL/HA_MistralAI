@@ -64,7 +64,8 @@ _PATHS = [
     "homeassistant.helpers.device_registry",
     "homeassistant.helpers.entity_platform",
     "homeassistant.helpers.intent", "homeassistant.helpers.llm",
-    "homeassistant.helpers.selector", "homeassistant.helpers.typing",
+    "homeassistant.helpers.selector", "homeassistant.helpers.translation",
+    "homeassistant.helpers.typing",
 ]
 for _p in _PATHS:
     if _p not in sys.modules:

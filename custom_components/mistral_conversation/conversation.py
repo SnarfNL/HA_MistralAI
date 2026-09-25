@@ -22,6 +22,7 @@ from homeassistant.helpers import intent, llm
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from ._api import async_spoken_error, mistral_error, mistral_request
 from ._web_search import build_conversation_payload
 from .const import (
     AGENT_CAPABLE_MODELS,
@@ -441,6 +442,12 @@ async def _filter_intercepted_tool(
 # Entity
 # ---------------------------------------------------------------------------
 
+async def _single_reply_stream(text: str) -> AsyncGenerator[dict[str, Any]]:
+    """Delta stream for a reply that arrived in one piece (role first)."""
+    yield {"role": "assistant"}
+    yield {"content": text}
+
+
 class MistralConversationEntity(ConversationEntity):
     """Mistral AI conversation agent entity."""
 
@@ -476,6 +483,30 @@ class MistralConversationEntity(ConversationEntity):
         )
 
     async def _async_handle_message(
+        self,
+        user_input: ConversationInput,
+        chat_log: conversation.ChatLog,
+    ) -> ConversationResult:
+        """Process a conversation turn; a failure is spoken, not raised.
+
+        Returning an error IntentResponse (instead of raising) lets the voice
+        satellite speak a short message in the user's language.
+        """
+        try:
+            return await self._async_converse(user_input, chat_log)
+        except HomeAssistantError as err:
+            _LOGGER.warning("Mistral conversation turn failed: %r", err)
+            message = await async_spoken_error(self.hass, err, user_input.language)
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN, message
+            )
+            return ConversationResult(
+                response=intent_response,
+                conversation_id=chat_log.conversation_id,
+            )
+
+    async def _async_converse(
         self,
         user_input: ConversationInput,
         chat_log: conversation.ChatLog,
@@ -563,11 +594,15 @@ class MistralConversationEntity(ConversationEntity):
                     ws_reply = None
 
                 if ws_reply:
-                    intent_response = intent.IntentResponse(language=user_input.language)
-                    intent_response.async_set_speech(ws_reply)
-                    return ConversationResult(
-                        response=intent_response,
-                        conversation_id=chat_log.conversation_id,
+                    # Add the answer to the chat log like any other reply, so
+                    # a follow-up question has it as context and TTS streams it.
+                    async for _content in chat_log.async_add_delta_content_stream(
+                        user_input.agent_id,
+                        _single_reply_stream(ws_reply),
+                    ):
+                        pass
+                    return conversation.async_get_result_from_chat_log(
+                        user_input, chat_log
                     )
 
         # --- Standard path: chat completions with tool-call loop ---------
@@ -616,9 +651,7 @@ class MistralConversationEntity(ConversationEntity):
                 raise
             except Exception as err:
                 _LOGGER.exception("Unexpected error in Mistral conversation")
-                raise HomeAssistantError(
-                    f"Unexpected error talking to Mistral: {err}"
-                ) from err
+                raise mistral_error("unexpected_error") from err
 
             # The model asked for a web search: service it against the
             # Conversations API and hand the result back on the next round. Checked before
@@ -697,17 +730,9 @@ class MistralConversationEntity(ConversationEntity):
                 model, user_text, language, store=stateful
             )
 
-        async with runtime.session.post(
-            url,
-            headers=runtime.headers,
-            json=_sanitize(payload),
-            timeout=aiohttp.ClientTimeout(total=90),
+        async with mistral_request(
+            self.hass, self._entry, "post", url, json=_sanitize(payload), timeout=90
         ) as resp:
-            if resp.status >= 400:
-                body = await resp.text()
-                raise HomeAssistantError(
-                    f"Mistral Conversations API error {resp.status}: {body}"
-                )
             data = await resp.json()
 
         new_conv_id = data.get("conversation_id") or data.get("id")
@@ -771,40 +796,22 @@ class MistralConversationEntity(ConversationEntity):
         appended to ``intercepted``. HA would otherwise try to execute a tool
         that isn't in its LLM API and raise.
         """
-        runtime = self._runtime
-        try:
-            async with runtime.session.post(
-                f"{MISTRAL_API_BASE}/chat/completions",
-                headers=runtime.headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=90),
-            ) as resp:
-                if resp.status == 401:
-                    raise HomeAssistantError("Invalid Mistral AI API key")
-                if resp.status == 429:
-                    raise HomeAssistantError("Mistral AI rate limit exceeded")
-                if resp.status >= 400:
-                    body = await resp.text()
-                    _LOGGER.error(
-                        "Mistral API HTTP %s — model=%s body=%s",
-                        resp.status, payload.get("model"), body,
-                    )
-                    raise HomeAssistantError(
-                        f"Mistral API error {resp.status}: {body}"
-                    )
+        async with mistral_request(
+            self.hass,
+            self._entry,
+            "post",
+            f"{MISTRAL_API_BASE}/chat/completions",
+            json=payload,
+            timeout=90,
+        ) as resp:
+            stream = _async_stream_delta(resp)
+            if intercept_tool is not None:
+                stream = _filter_intercepted_tool(
+                    stream, intercept_tool, intercepted if intercepted is not None else []
+                )
 
-                stream = _async_stream_delta(resp)
-                if intercept_tool is not None:
-                    stream = _filter_intercepted_tool(
-                        stream, intercept_tool, intercepted if intercepted is not None else []
-                    )
-
-                async for _content in chat_log.async_add_delta_content_stream(
-                    user_input.agent_id,
-                    stream,
-                ):
-                    pass
-
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Mistral AI request failed: %s", err)
-            raise HomeAssistantError(f"Cannot reach Mistral AI: {err}") from err
+            async for _content in chat_log.async_add_delta_content_stream(
+                user_input.agent_id,
+                stream,
+            ):
+                pass

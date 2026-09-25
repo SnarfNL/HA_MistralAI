@@ -90,6 +90,30 @@
   "exceptions": {
     "voices_refresh_failed": {
       "message": "Impossible d'actualiser les voix. Consultez le journal de Home Assistant pour plus de détails."
+    },
+    "invalid_auth": {
+      "message": "La clé API Mistral n'est pas valide. Saisissez-la à nouveau dans Home Assistant."
+    },
+    "rate_limited": {
+      "message": "Mistral est temporairement surchargé. Réessayez dans un instant."
+    },
+    "cannot_connect": {
+      "message": "Mistral est injoignable pour le moment."
+    },
+    "api_error": {
+      "message": "Mistral a renvoyé une erreur (HTTP {status})."
+    },
+    "empty_response": {
+      "message": "Mistral a renvoyé une réponse vide."
+    },
+    "json_parse_error": {
+      "message": "La réponse de Mistral n'était pas un JSON valide."
+    },
+    "structure_mismatch": {
+      "message": "La réponse de Mistral ne correspondait pas à la structure demandée."
+    },
+    "unexpected_error": {
+      "message": "Un problème est survenu lors de l'échange avec Mistral."
     }
   }
 }

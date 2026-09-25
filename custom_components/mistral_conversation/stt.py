@@ -20,9 +20,11 @@ from homeassistant.components.stt import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from ._api import mistral_request
 from .const import (
     DOMAIN,
     MISTRAL_API_BASE,
@@ -171,20 +173,21 @@ class MistralSTTEntity(SpeechToTextEntity):
 
             # Use only the Authorization header for multipart (no Content-Type override)
             auth_header = {"Authorization": runtime.headers["Authorization"]}
-            async with runtime.session.post(
+            async with mistral_request(
+                self.hass,
+                self._entry,
+                "post",
                 f"{MISTRAL_API_BASE}/audio/transcriptions",
                 headers=auth_header,
                 data=form,
-                timeout=aiohttp.ClientTimeout(total=60),
+                timeout=60,
             ) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    _LOGGER.error("Mistral STT HTTP %s: %s", resp.status, body)
-                    return SpeechResult("", SpeechResultState.ERROR)
                 result = await resp.json()
 
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Mistral STT request failed: %s", err)
+        except HomeAssistantError as err:
+            # The STT API reports failure through the result state, not by
+            # raising; the pipeline then tells the user it did not understand.
+            _LOGGER.error("Mistral STT request failed: %r", err)
             return SpeechResult("", SpeechResultState.ERROR)
 
         text = result.get("text", "").strip()

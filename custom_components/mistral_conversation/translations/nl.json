@@ -90,6 +90,30 @@
   "exceptions": {
     "voices_refresh_failed": {
       "message": "De stemmen konden niet worden ververst. Zie het Home Assistant-log voor details."
+    },
+    "invalid_auth": {
+      "message": "De Mistral API-sleutel is ongeldig. Voer hem opnieuw in in Home Assistant."
+    },
+    "rate_limited": {
+      "message": "Mistral is tijdelijk overbelast. Probeer het zo nog eens."
+    },
+    "cannot_connect": {
+      "message": "Mistral is nu niet bereikbaar."
+    },
+    "api_error": {
+      "message": "Mistral gaf een foutmelding (HTTP {status})."
+    },
+    "empty_response": {
+      "message": "Mistral gaf een leeg antwoord."
+    },
+    "json_parse_error": {
+      "message": "Het antwoord van Mistral was geen geldige JSON."
+    },
+    "structure_mismatch": {
+      "message": "Het antwoord van Mistral paste niet bij de gevraagde structuur."
+    },
+    "unexpected_error": {
+      "message": "Er ging iets mis in het gesprek met Mistral."
     }
   }
 }

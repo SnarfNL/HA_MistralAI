@@ -20,6 +20,8 @@ the maintainer, who sometimes talks to agents in Dutch; the repo itself is Engli
 - **Runtime data** — per-entry objects created at setup (HTTP session, headers, caches). Currently in `hass.data`, moving to `entry.runtime_data` (MA-10).
 - **Continue conversation** [doorluisteren] — the satellite keeps listening after a reply, without a new wake word. Decided by HA core from the chat log (reply ends in a question mark); the integration has no switch for it.
 - **Repair issue** — a user-facing HA notification with an optional fix flow.
+- **Spoken error** [gesproken foutmelding] — a short, translated sentence the conversation agent returns instead of raising when Mistral fails, so the satellite says what went wrong. In the pipeline language; English when there is no translation.
+- **Reauth** — HA's flow for re-entering the API key. Started automatically when Mistral answers 401.
 
 ## Mistral side
 
