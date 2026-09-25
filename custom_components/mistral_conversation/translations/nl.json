@@ -41,7 +41,6 @@
           "web_search_mode": "Webzoeken-routering",
           "web_search_trigger": "Triggerwoorden voor webzoeken (optioneel)",
           "stt_language": "Spraakherkenning taal (STT)",
-          "tts_voice": "Tekst-naar-spraak stem",
           "tts_mode": "Tekst-naar-spraak modus"
         },
         "data_description": {
@@ -54,7 +53,6 @@
           "web_search_mode": "'Laat het model beslissen' (aanbevolen): de AI zoekt alleen wanneer dat nodig is en kan in dezelfde opdracht nog steeds je apparaten bedienen. 'Altijd zoeken': elke opdracht gaat via de Conversations API — langzamer, en apparaatbesturing werkt dan niet.",
           "web_search_trigger": "Optioneel. Door komma's gescheiden zinnen, bijvoorbeeld 'zoek op, zoek online, google'. Als dit is ingevuld, gaat dit vóór de routering: alleen opdrachten die met zo'n zin beginnen zoeken op het web (de zin zelf wordt uit de zoekopdracht gehaald), alle andere opdrachten zoeken nooit. Laat leeg om de routering te laten beslissen.",
           "stt_language": "Taal voor Voxtral spraakherkenning. Laat leeg voor automatische detectie.",
-          "tts_voice": "De standaardstem die door Mistral TTS wordt gebruikt als er geen stem is geconfigureerd in de assistentinstellingen.",
           "tts_mode": "Streaming: lage latentie via SSE WAV met pipelining per zin. Batch: één enkele mp3-aanvraag, hogere latentie maar kleinere antwoorden cachen goed. De tts.speak service gebruikt altijd batch."
         }
       }

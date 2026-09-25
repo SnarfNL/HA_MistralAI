@@ -19,7 +19,6 @@ from .const import (
     CONF_PROMPT,
     CONF_TEMPERATURE,
     CONF_TTS_MODE,
-    CONF_TTS_VOICE,
     CONF_WEB_SEARCH,
     CONF_WEB_SEARCH_MODE,
     CONF_WEB_SEARCH_TRIGGER,
@@ -28,14 +27,12 @@ from .const import (
     DEFAULT_PROMPT,
     DEFAULT_TEMPERATURE,
     DEFAULT_TTS_MODE,
-    DEFAULT_TTS_VOICE,
     DEFAULT_WEB_SEARCH,
     DEFAULT_WEB_SEARCH_MODE,
     DEFAULT_WEB_SEARCH_TRIGGER,
     DOMAIN,
     MISTRAL_API_BASE,
     TTS_MODES,
-    TTS_VOICES,
     WEB_SEARCH_MODES,
 )
 
@@ -252,19 +249,6 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                             CONF_WEB_SEARCH_TRIGGER, DEFAULT_WEB_SEARCH_TRIGGER
                         ),
                     ): selector.TextSelector(),
-                    # ── TTS voice (fallback default) ──────────────────────
-                    # Primary voice selection is in Settings → Voice Assistants.
-                    # This setting is used as fallback when no voice is chosen
-                    # there, or when TTS is called directly from an automation.
-                    vol.Optional(
-                        CONF_TTS_VOICE,
-                        default=opts.get(CONF_TTS_VOICE, DEFAULT_TTS_VOICE),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=TTS_VOICES,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
                     # ── TTS mode (stream vs batch) ────────────────────────
                     # 'stream' uses Mistral's SSE WAV endpoint with sentence
                     # pipelining for low time-to-first-audio. 'batch' issues a

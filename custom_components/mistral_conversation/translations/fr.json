@@ -41,7 +41,6 @@
           "web_search_mode": "Routage de la recherche web",
           "web_search_trigger": "Phrases déclencheurs de recherche web (facultatif)",
           "stt_language": "Langage de la reconnaissance vocale (STT)",
-          "tts_voice": "Voix de la transcription vocale (TTS)",
           "tts_mode": "Mode de synthèse vocale (TTS)"
         },
         "data_description": {
@@ -54,7 +53,6 @@
           "web_search_mode": "« Laisser le modèle décider » (recommandé) : l'IA ne recherche que lorsqu'elle en a besoin et peut toujours contrôler vos appareils dans le même tour. « Toujours rechercher » : chaque requête passe par l'API Agents — plus lent, et le contrôle des appareils ne fonctionne pas dans ce cas.",
           "web_search_trigger": "Facultatif. Phrases séparées par des virgules, par exemple « recherche, cherche en ligne, google ». Si renseigné, cela prime sur le mode de routage : seules les commandes commençant par l'une de ces phrases lancent une recherche web (la phrase est retirée de la requête) ; toutes les autres ne recherchent jamais. Laissez vide pour laisser le mode de routage décider.",
           "stt_language": "Langue utilisée pour la reconnaissance vocale (STT) de Voxtral. Selectionnez 'Auto-detect' Pour laisser Voxtral déterminer la langue de lui-même.",
-          "tts_voice": "Voix par défaut utilisée par Mistral TTS, si aucune n'est configurée dans les paramètres de l'assistant.",
           "tts_mode": "Streaming : faible latence avec WAV en SSE et pipelining par phrase. Batch : une seule requête mp3, latence plus élevée mais réponses plus petites bien mises en cache. Le service tts.speak utilise toujours le mode batch."
         }
       }

@@ -16,6 +16,7 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 - **Fixed:** Assistant turns carrying neither text nor tool calls are no longer sent to Mistral — they were rejected with HTTP 400 `Assistant message must have either content or tool_calls, but not none.` (code 3240).
 - **Added:** 29 unit tests for trigger resolution, tool-call interception, and the content-less-assistant-turn guard.
 - **Fixed:** streaming TTS stays playable when the first sentence fails (MA-01).
+- **Changed:** The *Text-to-speech voice* option is removed from the integration options. Choose the voice under Settings → Voice assistants, or pass `voice` in `tts.speak`. Without a voice the built-in default (`en_paul_neutral`) is used; a voice saved in the old option is no longer used. Fixes #75.
 
 ---
 
