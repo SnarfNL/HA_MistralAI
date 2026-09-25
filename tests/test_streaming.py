@@ -11,7 +11,6 @@ itself imports ``homeassistant``.
 """
 from __future__ import annotations
 
-import asyncio
 import base64
 import importlib.util
 import json

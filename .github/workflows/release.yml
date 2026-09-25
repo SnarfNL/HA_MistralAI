@@ -1,0 +1,26 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  check-version:
+    name: Manifest version matches release tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare manifest version with tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('custom_components/mistral_conversation/manifest.json'))['version'])")
+          echo "Release tag:      $TAG"
+          echo "Manifest version: $VERSION"
+          if [ "$VERSION" != "$TAG" ]; then
+            echo "::error::manifest.json version ($VERSION) does not match release tag ($TAG)"
+            exit 1
+          fi

@@ -8,7 +8,6 @@
   "documentation": "https://github.com/SnarfNL/HA_MistralAI",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "quality_scale": "platinum",
   "requirements": [],
-  "version": "2026.05"
+  "version": "2026.09.03"
 }

@@ -40,7 +40,6 @@ from .const import (
     TTS_VOICES,
     WEB_SEARCH_MODES,
 )
-from .stt import LANGUAGE_OPTIONS
 
 _LOGGER = logging.getLogger(__name__)
 

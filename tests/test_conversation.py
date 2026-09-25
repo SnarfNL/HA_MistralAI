@@ -6,7 +6,6 @@ chat-completions streaming responses).
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import unittest
 from typing import Any, AsyncIterator
