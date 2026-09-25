@@ -37,7 +37,6 @@
           "llm_hass_api": "Home Assistant bedienen",
           "temperature": "Temperature (creativiteit)",
           "max_tokens": "Maximaal tokens in antwoord",
-          "continue_conversation": "Gesprekken inschakelen en luisteren naar antwoorden (Experimenteel)",
           "web_search": "Webzoeken inschakelen (Beta)",
           "web_search_mode": "Webzoeken-routering",
           "web_search_trigger": "Triggerwoorden voor webzoeken (optioneel)",
@@ -49,9 +48,8 @@
           "llm_hass_api": "Selecteer welke Home Assistant API de AI mag gebruiken om apparaten te bedienen. 'Assist' stelt dezelfde entiteiten beschikbaar als de ingebouwde spraakassistent.",
           "temperature": "0 = deterministisch, 1 = creatief. Mistral bereik: 0.0–1.0.",
           "max_tokens": "Maximale lengte van het AI-antwoord in tokens.",
-          "continue_conversation": "Als ingeschakeld blijft de assistent automatisch luisteren na een antwoord dat eindigt met een vraag. Gebruikt de native HA continue_conversation vlag. Experimenteel: gedrag kan per satellite verschillen.",
-          "web_search": "Als ingeschakeld kan de AI het web doorzoeken voor actuele informatie. Gebruikt Mistral's Agents API (beta). Vereist een model dat agents ondersteunt (mistral-medium-latest of mistral-large-latest).",
-          "web_search_mode": "'Laat het model beslissen' (aanbevolen): de AI zoekt alleen wanneer dat nodig is en kan in dezelfde opdracht nog steeds je apparaten bedienen. 'Altijd zoeken': elke opdracht gaat via de Agents API — langzamer, en apparaatbesturing werkt dan niet.",
+          "web_search": "Als ingeschakeld kan de AI het web doorzoeken voor actuele informatie. Gebruikt Mistral's Conversations API (beta). Vereist een model dat agents ondersteunt (mistral-medium-latest of mistral-large-latest).",
+          "web_search_mode": "'Laat het model beslissen' (aanbevolen): de AI zoekt alleen wanneer dat nodig is en kan in dezelfde opdracht nog steeds je apparaten bedienen. 'Altijd zoeken': elke opdracht gaat via de Conversations API — langzamer, en apparaatbesturing werkt dan niet.",
           "web_search_trigger": "Optioneel. Door komma's gescheiden zinnen, bijvoorbeeld 'zoek op, zoek online, google'. Als dit is ingevuld, gaat dit vóór de routering: alleen opdrachten die met zo'n zin beginnen zoeken op het web (de zin zelf wordt uit de zoekopdracht gehaald), alle andere opdrachten zoeken nooit. Laat leeg om de routering te laten beslissen.",
           "tts_mode": "Streaming: lage latentie via SSE WAV met pipelining per zin. Batch: één enkele mp3-aanvraag, hogere latentie maar kleinere antwoorden cachen goed. De tts.speak service gebruikt altijd batch."
         }

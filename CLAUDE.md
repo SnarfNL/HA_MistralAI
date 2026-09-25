@@ -38,13 +38,16 @@ CI (GitHub Actions) runs hassfest, HACS validation, ruff and pytest on every PR.
 - Do not bump `version` in manifest.json (done at release time).
 - Do not add entries to `requirements` in manifest.json without asking.
 
+## Language
+
+Everything that goes into the repo or to GitHub is written in English: code, comments, log messages, docstrings, docs, commit messages, PR descriptions, issues and issue comments. The maintainer sometimes talks to agents in Dutch; that does not change the language of the repo. The only Dutch text is the UI translation file `translations/nl.json`.
+
 ## PR description
 
-Write it in Dutch, with: the problem, what changed (plain language, no jargon), and a testchecklist of concrete steps the maintainer can do in Home Assistant or on GitHub before merging.
+Write it in English, with: the problem, what changed (plain language, no jargon), and a test checklist of concrete steps the maintainer can do in Home Assistant or on GitHub before merging.
 
 ## Code conventions
 
-- Code, comments, log messages and docstrings in English.
 - Any text shown in the UI goes in `strings.json` AND all three files in `translations/` (en, nl, fr). Keep keys in sync.
 - Network calls: catch `(aiohttp.ClientError, TimeoutError)` — aiohttp raises `TimeoutError`, which is not a `ClientError`.
 - Never put raw API response bodies in errors shown to users; log them instead.

@@ -13,6 +13,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from ._web_search import WebSearchConversations
 from .const import DOMAIN, MISTRAL_API_BASE
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,8 +29,11 @@ class MistralRuntimeData:
 
     session: aiohttp.ClientSession
     headers: dict[str, str]
-    # Cached Mistral Agent ID for web-search conversations
-    web_search_agent_id: str | None = field(default=None)
+    # HA conversation -> Mistral conversation, for follow-ups on the direct
+    # web-search route. Bounded and expiring.
+    web_search_convs: WebSearchConversations = field(
+        default_factory=WebSearchConversations
+    )
     # The TTS entity, registered while it is loaded so the refresh-voices
     # button can reach it.
     tts_entity: Any | None = field(default=None)
