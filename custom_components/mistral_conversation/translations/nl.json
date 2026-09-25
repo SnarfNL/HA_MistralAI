@@ -15,6 +15,13 @@
         "data": {
           "api_key": "API-sleutel"
         }
+      },
+      "reconfigure": {
+        "title": "Mistral AI API-sleutel wijzigen",
+        "description": "Voer een nieuwe API-sleutel in. De integratie start opnieuw met deze sleutel; je instellingen blijven hetzelfde.",
+        "data": {
+          "api_key": "API-sleutel"
+        }
       }
     },
     "error": {
@@ -24,7 +31,8 @@
     },
     "abort": {
       "already_configured": "Mistral AI Conversation is al geconfigureerd.",
-      "reauth_successful": "Herverificatie geslaagd."
+      "reauth_successful": "Herverificatie geslaagd.",
+      "reconfigure_successful": "De API-sleutel is gewijzigd."
     }
   },
   "options": {

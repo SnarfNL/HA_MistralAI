@@ -15,6 +15,13 @@
         "data": {
           "api_key": "Clé API"
         }
+      },
+      "reconfigure": {
+        "title": "Modifier la clé API Mistral AI",
+        "description": "Saisissez une nouvelle clé API. L'intégration redémarre avec cette clé ; vos paramètres restent inchangés.",
+        "data": {
+          "api_key": "Clé API"
+        }
       }
     },
     "error": {
@@ -24,7 +31,8 @@
     },
     "abort": {
       "already_configured": "Mistral AI Conversation est déjà configuré.",
-      "reauth_successful": "Ré-identification effectuée."
+      "reauth_successful": "Ré-identification effectuée.",
+      "reconfigure_successful": "La clé API a été modifiée."
     }
   },
   "options": {

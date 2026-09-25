@@ -36,6 +36,14 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+API_KEY_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_API_KEY): selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        ),
+    }
+)
+
 
 class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the initial setup config flow."""
@@ -61,15 +69,7 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_API_KEY): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.PASSWORD
-                        )
-                    ),
-                }
-            ),
+            data_schema=API_KEY_SCHEMA,
             errors=errors,
             description_placeholders={
                 "api_key_url": "https://console.mistral.ai/api-keys"
@@ -100,16 +100,28 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_API_KEY): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.PASSWORD
-                        )
-                    ),
-                }
-            ),
+            data_schema=API_KEY_SCHEMA,
             errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Change the API key without removing the integration."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            error = await self._test_api_key(user_input[CONF_API_KEY])
+            if error:
+                errors["base"] = error
+            else:
+                return self.async_update_reload_and_abort(
+                    self._get_reconfigure_entry(),
+                    data_updates={CONF_API_KEY: user_input[CONF_API_KEY]},
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=API_KEY_SCHEMA, errors=errors
         )
 
     async def _test_api_key(self, api_key: str) -> str | None:
