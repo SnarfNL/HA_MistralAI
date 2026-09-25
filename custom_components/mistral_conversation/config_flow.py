@@ -126,7 +126,7 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return "invalid_auth"
                 if resp.status != 200:
                     return "cannot_connect"
-        except aiohttp.ClientConnectorError:
+        except (aiohttp.ClientError, TimeoutError):
             return "cannot_connect"
         except Exception:  # pylint: disable=broad-except
             _LOGGER.exception("Unexpected error testing API key")

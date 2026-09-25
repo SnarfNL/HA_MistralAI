@@ -36,7 +36,6 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import aiohttp
 from homeassistant.components.tts import (
     TextToSpeechEntity,
     TTSAudioRequest,
@@ -50,6 +49,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from ._api import mistral_error, mistral_request
 from ._streaming import (
     has_speakable_content,
     iter_sse_audio_chunks,
@@ -233,27 +233,20 @@ class MistralTTSEntity(TextToSpeechEntity):
         timeout, non-2xx, empty list — so the caller can keep the last good
         list.
         """
-        runtime = self._runtime
         all_items: list[dict[str, Any]] = []
         limit = 100
         offset = 0
 
         try:
             while True:
-                async with runtime.session.get(
+                async with mistral_request(
+                    self.hass,
+                    self._entry,
+                    "get",
                     f"{MISTRAL_API_BASE}/audio/voices",
-                    headers=runtime.headers,
                     params={"limit": limit, "offset": offset},
-                    timeout=aiohttp.ClientTimeout(total=10),
+                    timeout=10,
                 ) as resp:
-                    if resp.status >= 400:
-                        body = await resp.text()
-                        _LOGGER.warning(
-                            "Mistral voices fetch HTTP %s. body=%s",
-                            resp.status,
-                            body,
-                        )
-                        return None
                     data = await resp.json()
 
                 items = data.get("items") or []
@@ -263,8 +256,8 @@ class MistralTTSEntity(TextToSpeechEntity):
                 offset += len(items)
                 if not items or offset >= total:
                     break
-        except (aiohttp.ClientError, TimeoutError) as err:
-            _LOGGER.warning("Mistral voices fetch failed (%s).", err)
+        except HomeAssistantError as err:
+            _LOGGER.warning("Mistral voices fetch failed (%r).", err)
             return None
 
         voices = [
@@ -304,37 +297,21 @@ class MistralTTSEntity(TextToSpeechEntity):
             "response_format": "mp3",
         }
 
-        runtime = self._runtime
-        try:
-            async with runtime.session.post(
-                f"{MISTRAL_API_BASE}/audio/speech",
-                headers=runtime.headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                if resp.status == 401:
-                    raise HomeAssistantError("Invalid Mistral AI API key")
-                if resp.status == 429:
-                    raise HomeAssistantError("Mistral AI rate limit exceeded")
-                if resp.status >= 400:
-                    body = await resp.text()
-                    _LOGGER.error(
-                        "Mistral TTS HTTP %s — voice=%s body=%s",
-                        resp.status,
-                        voice,
-                        body,
-                    )
-                    raise HomeAssistantError(f"Mistral TTS error {resp.status}: {body}")
-                # Mistral returns JSON with base64-encoded MP3 in audio_data
-                data = await resp.json()
-                audio_b64 = data.get("audio_data", "")
-                if not audio_b64:
-                    raise HomeAssistantError("Mistral TTS returned empty audio_data")
-                audio_bytes = base64.b64decode(audio_b64)
-
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Mistral TTS request failed: %s", err)
-            raise HomeAssistantError(f"Cannot reach Mistral AI: {err}") from err
+        async with mistral_request(
+            self.hass,
+            self._entry,
+            "post",
+            f"{MISTRAL_API_BASE}/audio/speech",
+            json=payload,
+            timeout=30,
+        ) as resp:
+            # Mistral returns JSON with base64-encoded MP3 in audio_data
+            data = await resp.json()
+        audio_b64 = data.get("audio_data", "")
+        if not audio_b64:
+            _LOGGER.error("Mistral TTS returned empty audio_data (voice=%s)", voice)
+            raise mistral_error("empty_response")
+        audio_bytes = base64.b64decode(audio_b64)
 
         _LOGGER.debug(
             "Mistral TTS (batch): synthesised %d bytes (voice=%s)",
@@ -567,7 +544,6 @@ class MistralTTSEntity(TextToSpeechEntity):
         *idx* is purely for log correlation with the surrounding START/DONE
         lines emitted by the worker; logic does not depend on it.
         """
-        runtime = self._runtime
         payload = {
             "model": TTS_MODEL,
             "input": text,
@@ -579,48 +555,34 @@ class MistralTTSEntity(TextToSpeechEntity):
         header_done = False
         request_start = time.monotonic()
         first_chunk_logged = False
-        try:
-            async with runtime.session.post(
-                f"{MISTRAL_API_BASE}/audio/speech",
-                headers=runtime.headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=60),
-            ) as resp:
-                if resp.status == 401:
-                    raise HomeAssistantError("Invalid Mistral AI API key")
-                if resp.status == 429:
-                    raise HomeAssistantError("Mistral AI rate limit exceeded")
-                if resp.status >= 400:
-                    body = await resp.text()
-                    _LOGGER.error(
-                        "Mistral TTS HTTP %s — voice=%s body=%s",
-                        resp.status,
-                        voice,
-                        body,
+        async with mistral_request(
+            self.hass,
+            self._entry,
+            "post",
+            f"{MISTRAL_API_BASE}/audio/speech",
+            json=payload,
+            timeout=60,
+        ) as resp:
+            async for audio in iter_sse_audio_chunks(resp):
+                if not first_chunk_logged:
+                    # Time from POST to first decoded audio bytes — the
+                    # actual TTFA contributed by Mistral. Logged before
+                    # the optional header-strip so it reflects what the
+                    # network delivered, not what we forwarded onward.
+                    _LOGGER.debug(
+                        "TTS sentence %s first audio chunk after %.3fs" " (%d decoded bytes)",
+                        idx if idx is not None else "?",
+                        time.monotonic() - request_start,
+                        len(audio),
                     )
-                    raise HomeAssistantError(f"Mistral TTS error {resp.status}: {body}")
-                async for audio in iter_sse_audio_chunks(resp):
-                    if not first_chunk_logged:
-                        # Time from POST to first decoded audio bytes — the
-                        # actual TTFA contributed by Mistral. Logged before
-                        # the optional header-strip so it reflects what the
-                        # network delivered, not what we forwarded onward.
-                        _LOGGER.debug(
-                            "TTS sentence %s first audio chunk after %.3fs" " (%d decoded bytes)",
-                            idx if idx is not None else "?",
-                            time.monotonic() - request_start,
-                            len(audio),
-                        )
-                        first_chunk_logged = True
-                    if not header_done:
-                        header_buf += audio
-                        if len(header_buf) < TTS_WAV_HEADER_SIZE:
-                            continue
-                        header_done = True
-                        await out_queue.put(("header", header_buf[:TTS_WAV_HEADER_SIZE]))
-                        audio = header_buf[TTS_WAV_HEADER_SIZE:]
-                        if not audio:
-                            continue
-                    await out_queue.put(audio)
-        except aiohttp.ClientError as err:
-            raise HomeAssistantError(f"Cannot reach Mistral AI: {err}") from err
+                    first_chunk_logged = True
+                if not header_done:
+                    header_buf += audio
+                    if len(header_buf) < TTS_WAV_HEADER_SIZE:
+                        continue
+                    header_done = True
+                    await out_queue.put(("header", header_buf[:TTS_WAV_HEADER_SIZE]))
+                    audio = header_buf[TTS_WAV_HEADER_SIZE:]
+                    if not audio:
+                        continue
+                await out_queue.put(audio)

@@ -5,10 +5,8 @@ import asyncio
 import base64
 import json
 import logging
-from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
-import aiohttp
 from homeassistant.components import conversation
 from homeassistant.components.ai_task import (
     AITaskEntity,
@@ -18,13 +16,13 @@ from homeassistant.components.ai_task import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+from ._api import mistral_error, mistral_request
 from .const import (
     CONF_MAX_TOKENS,
     CONF_MODEL,
@@ -52,6 +50,34 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Mistral AI task entity."""
     async_add_entities([MistralAITaskEntity(hass, config_entry)])
+
+
+def _parse_structured(structure: Any, response_text: str) -> Any:
+    """Parse and validate a structured AI Task response, or raise.
+
+    An automation that asked for a ``structure`` always gets data of that
+    shape or a clear error, never a raw string or silently wrong data (#34).
+    Mistral's own schema enforcement is not relied on ("strict": False is
+    sent, see ``_build_response_format``), so the result is checked here.
+    """
+    try:
+        parsed = json.loads(response_text)
+    except json.JSONDecodeError as err:
+        _LOGGER.warning(
+            "Failed to parse AI task response as JSON: %s", response_text[:200]
+        )
+        raise mistral_error("json_parse_error") from err
+    try:
+        # Validate only; return the model's data unchanged, as before.
+        structure(parsed)
+    except Exception as err:
+        _LOGGER.warning(
+            "AI task response does not match requested structure: %s (response: %s)",
+            err,
+            response_text[:200],
+        )
+        raise mistral_error("structure_mismatch") from err
+    return parsed
 
 
 class MistralAITaskEntity(AITaskEntity):
@@ -241,28 +267,19 @@ class MistralAITaskEntity(AITaskEntity):
         if response_format:
             payload["response_format"] = response_format
 
-        try:
-            async with self._runtime.session.post(
-                f"{MISTRAL_API_BASE}/chat/completions",
-                headers=self._runtime.headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=90),
-            ) as resp:
-                if resp.status == HTTPStatus.UNAUTHORIZED:
-                    raise HomeAssistantError("Invalid Mistral AI API key")
-                if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
-                    raise HomeAssistantError("Mistral AI rate limit exceeded")
-                if resp.status >= HTTPStatus.BAD_REQUEST:
-                    body = await resp.text()
-                    raise HomeAssistantError(f"Mistral API error {resp.status}: {body}")
-
-                async for _ in chat_log.async_add_delta_content_stream(
-                    self.entity_id,
-                    _async_stream_delta(resp),
-                ):
-                    pass
-        except aiohttp.ClientError as err:
-            raise HomeAssistantError(f"Cannot reach Mistral AI: {err}") from err
+        async with mistral_request(
+            self.hass,
+            self._entry,
+            "post",
+            f"{MISTRAL_API_BASE}/chat/completions",
+            json=payload,
+            timeout=90,
+        ) as resp:
+            async for _ in chat_log.async_add_delta_content_stream(
+                self.entity_id,
+                _async_stream_delta(resp),
+            ):
+                pass
 
         response_text = ""
         for c in reversed(chat_log.content):
@@ -271,33 +288,10 @@ class MistralAITaskEntity(AITaskEntity):
                 break
 
         if task.structure is not None:
-            try:
-                parsed = json.loads(response_text)
-            except json.JSONDecodeError:
-                _LOGGER.warning(
-                    "Failed to parse AI task response as JSON: %s", response_text[:200]
-                )
-            else:
-                # "strict": False (Mistral doesn't support strict JSON-schema
-                # enforcement the way OpenAI does) means the model is free to
-                # add/rename/flatten properties instead of the request
-                # failing. Validate against the requested structure so a
-                # mismatch is a visible warning instead of silently-wrong
-                # data reaching the caller (#34). Never raises — this is
-                # diagnostic only, the parsed data is still returned as-is.
-                try:
-                    task.structure(parsed)
-                except Exception as err:  # noqa: BLE001 - diagnostic-only validation, must never raise
-                    _LOGGER.warning(
-                        "AI task response does not match requested structure: %s "
-                        "(response: %s)",
-                        err,
-                        response_text[:200],
-                    )
-                return GenDataTaskResult(
-                    conversation_id=chat_log.conversation_id,
-                    data=parsed,
-                )
+            return GenDataTaskResult(
+                conversation_id=chat_log.conversation_id,
+                data=_parse_structured(task.structure, response_text),
+            )
 
         return GenDataTaskResult(
             conversation_id=chat_log.conversation_id,

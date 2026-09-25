@@ -30,7 +30,7 @@ CI (GitHub Actions) runs hassfest, HACS validation, ruff and pytest on every PR.
 
 ## Workflow rules
 
-- One story per branch and PR. Branch names: `fix/ma-XX-short-name`, `feat/ma-XX-...`, `ci/...`. Always branch from the latest `main`.
+- One story per branch and PR, unless the maintainer asks to bundle stories; then one branch and one PR that closes each issue (`Closes #N` per issue). Branch names: `fix/ma-XX-short-name`, `feat/ma-XX-...`, `ci/...`, or a descriptive name for a bundle (e.g. `fix/release-1-stable`). Always branch from the latest `main`.
 - Never push to `main`, never merge the PR yourself.
 - Stay inside the story's scope. No drive-by refactors, renames or formatting changes in unrelated code; list other problems you notice in the PR instead.
 - Every behaviour change gets a unit test. Existing tests must keep passing without loosening their assertions.
@@ -49,7 +49,8 @@ Write it in English, with: the problem, what changed (plain language, no jargon)
 ## Code conventions
 
 - Any text shown in the UI goes in `strings.json` AND all three files in `translations/` (en, nl, fr). Keep keys in sync.
-- Network calls: catch `(aiohttp.ClientError, TimeoutError)` — aiohttp raises `TimeoutError`, which is not a `ClientError`.
+- Calls to the Mistral API go through `mistral_request()` in `_api.py`. It handles timeouts, reauth on 401, retries on 429 and translated errors in one place. Raise user-facing errors with `mistral_error("<key>")`; every key lives in the `exceptions` section of strings.json and all three translations.
+- Anything else that does network I/O catches `(aiohttp.ClientError, TimeoutError)` — aiohttp raises `TimeoutError`, which is not a `ClientError`.
 - Never put raw API response bodies in errors shown to users; log them instead.
 - Target Python 3.13 and the minimum HA version in hacs.json.
 
