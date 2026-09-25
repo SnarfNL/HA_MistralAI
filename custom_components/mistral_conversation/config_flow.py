@@ -14,7 +14,6 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CHAT_MODELS,
-    CONF_CONTINUE_CONVERSATION,
     CONF_MAX_TOKENS,
     CONF_MODEL,
     CONF_PROMPT,
@@ -24,7 +23,6 @@ from .const import (
     CONF_WEB_SEARCH,
     CONF_WEB_SEARCH_MODE,
     CONF_WEB_SEARCH_TRIGGER,
-    DEFAULT_CONTINUE_CONVERSATION,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_PROMPT,
@@ -221,13 +219,6 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                             mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
-                    # ── Continue conversation (experimental) ──────────────
-                    vol.Optional(
-                        CONF_CONTINUE_CONVERSATION,
-                        default=opts.get(
-                            CONF_CONTINUE_CONVERSATION, DEFAULT_CONTINUE_CONVERSATION
-                        ),
-                    ): selector.BooleanSelector(),
                     # ── Web search (beta) ─────────────────────────────────
                     vol.Optional(
                         CONF_WEB_SEARCH,

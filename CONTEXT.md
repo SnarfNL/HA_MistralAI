@@ -18,7 +18,7 @@ maintainer and PR descriptions use Dutch.
 - **AI Task** — HA's non-conversational LLM entity (`ai_task.generate_data`, later `generate_image`), used from automations.
 - **Config entry** — one configured instance of the integration (holds the API key). **Options** are its editable settings. **Subentry** — a child configuration under a config entry (planned: one per conversation agent / AI Task, MA-12).
 - **Runtime data** — per-entry objects created at setup (HTTP session, headers, caches). Currently in `hass.data`, moving to `entry.runtime_data` (MA-10).
-- **Continue conversation** [doorluisteren] — the satellite keeps listening after a reply, without a new wake word.
+- **Continue conversation** [doorluisteren] — the satellite keeps listening after a reply, without a new wake word. Decided by HA core from the chat log (reply ends in a question mark); the integration has no switch for it.
 - **Repair issue** — a user-facing HA notification with an optional fix flow.
 
 ## Mistral side

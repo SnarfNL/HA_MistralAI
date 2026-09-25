@@ -29,7 +29,7 @@
 6. [Options](#options)
    - [Available models](#available-models)
    - [System prompt](#system-prompt)
-   - [Continue conversation (Experimental)](#continue-conversation-experimental)
+   - [Continue conversation](#continue-conversation)
    - [Web search (Beta)](#web-search-beta)
 7. [Controlling devices](#controlling-devices)
 8. [Using as a service action](#using-as-a-service-action)
@@ -61,7 +61,7 @@ This integration makes **Mistral AI** available as a fully-featured conversation
 | Conversation memory | ✅ | Context kept per session until 5 min idle (HA timeout). |
 | Jinja2 system prompt | ✅ | Templates with `{{ now() }}`, `{{ ha_name }}` etc. |
 | Multilingual | ✅ | Responds in the user's language |
-| Continue conversation | ✅ | Keeps microphone open after questions (Experimental) |
+| Continue conversation | ✅ | Home Assistant keeps the microphone open after a reply that ends in a question |
 | Web search | ✅ | Model-decided web search via the Conversations API, or trigger phrases (Beta) |
 | Separate devices | ✅ | Conversation and STT appear as separate HA devices |
 
@@ -139,7 +139,6 @@ Click the integration → **Configure** to change settings.
 | **Temperature** | `0.7` | Creativity: 0.0 = deterministic, 1.0 = creative |
 | **Max tokens** | `1024` | Maximum response length |
 | **Control HA** | On | Allow the AI to control exposed devices |
-| **Continue conversation** | Off | Keep listening after questions (Experimental) |
 | **Web search** | Off | Allow the AI to search the web (Beta) |
 | **Web search routing** | `Let the model decide` | How web search is triggered — see below |
 | **Web search trigger phrases** | *(empty)* | Optional phrases that force a web search — see below |
@@ -186,9 +185,11 @@ Do not use markdown formatting that cannot be read aloud, such as asterisks for 
 | `{{ now() }}` | Current datetime object |
 | `{{ now().strftime(…) }}` | Formatted date/time string |
 
-### Continue conversation (Experimental)
+### Continue conversation
 
-When enabled, the assistant automatically keeps the microphone open after any response that contains a question (`?`). This is implemented using the native `continue_conversation` flag in HA's `ConversationResult` — no separate automation is needed.
+There is no option for this: Home Assistant core decides. When a reply ends in a question mark (`?`, `？` or `;`), core sets the `continue_conversation` flag on the result and the satellite keeps listening without a new wake word. A question mark in the middle of a reply does not count.
+
+> **Note:** Replies that come from the web-search path (`always` mode and trigger phrases) do not go through the chat log yet, so they never continue the conversation. This is tracked in MA-02.
 
 > **Note:** This feature requires a satellite device that supports `assist_satellite.start_conversation`. Behaviour may vary between satellite types.
 
