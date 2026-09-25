@@ -1,12 +1,9 @@
 """Tests for the bounded web-search conversation map and request payload."""
-# ruff: noqa: I001 - `_ha_stubs` must be imported before `mistral_conversation`.
 from __future__ import annotations
 
 import unittest
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
-from mistral_conversation._web_search import (
+from custom_components.mistral_conversation._web_search import (
     WEB_SEARCH_INSTRUCTIONS,
     WebSearchConversations,
     build_conversation_payload,

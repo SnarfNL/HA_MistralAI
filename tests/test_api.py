@@ -4,7 +4,6 @@ No real Home Assistant and no network: the HTTP session is a fake that serves
 queued responses or raises queued exceptions, and ``_api._sleep`` is patched
 so retries are instant and their waits can be checked.
 """
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import json
@@ -14,13 +13,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 import aiohttp
-
 from homeassistant.exceptions import HomeAssistantError
-from mistral_conversation import _api
-from mistral_conversation._api import (
+
+from custom_components.mistral_conversation import _api
+from custom_components.mistral_conversation._api import (
     MAX_RETRY_AFTER,
     async_spoken_error,
     describe_error,
@@ -30,7 +27,7 @@ from mistral_conversation._api import (
     read_json,
     translate_stream,
 )
-from mistral_conversation.const import DOMAIN
+from custom_components.mistral_conversation.const import DOMAIN
 
 COMPONENT = Path(__file__).resolve().parent.parent / "custom_components" / "mistral_conversation"
 URL = "https://api.mistral.ai/v1/x"

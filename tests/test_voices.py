@@ -1,12 +1,9 @@
 """Tests for ``_voices.py``: readable labels and ordering for the voice picker."""
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import unittest
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
-from mistral_conversation._voices import build_voice_list, voice_label
+from custom_components.mistral_conversation._voices import build_voice_list, voice_label
 
 
 class VoiceLabelTests(unittest.TestCase):
