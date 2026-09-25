@@ -25,8 +25,9 @@ maintainer and PR descriptions use Dutch.
 
 - **Model** — a Mistral chat model ID, preferably a `-latest` alias (e.g. `ministral-8b-latest`). *Agent-capable models* can use the Agents/Conversations API.
 - **Chat Completions API** — `/v1/chat/completions`; the default path for every conversation turn.
-- **Agents / Conversations API** — `/v1/agents`, `/v1/conversations`; the only place Mistral's built-in `web_search` works.
-- **Web-search agent** — the single Mistral agent this integration creates to service web searches ("HA Mistral Web Search").
+- **Conversations API** — `/v1/conversations`; where Mistral's built-in `web_search` tool is reachable. The integration creates no Mistral *agent* in the user's account.
+- **Web-search conversation** — a Mistral-side conversation used to answer a search. On the *direct route* (trigger phrase or legacy `always`) one is kept briefly per HA conversation so follow-ups have context, then expires and is deleted. On the *model route* (the model asks for a search) each search uses a fresh, unstored one.
+- **Direct route / model route** — the two ways a web search happens: *direct* sends the utterance straight to Mistral and speaks its reply; *model* lets the conversation agent call a `web_search` tool and answer in its own words.
 - **Voxtral (STT)** — Mistral's speech-to-text models. *Batch* = upload a whole WAV; *realtime* = WebSocket streaming (MA-24).
 - **Context bias** — up to 100 words/phrases sent to Voxtral to improve recognition of names (MA-18).
 - **Voice** [stem] — a Mistral TTS voice. Has an `id` (UUID, used for synthesis) and a `name` (shown in pickers). *Custom voice* = created by the user in Mistral Studio or by cloning.

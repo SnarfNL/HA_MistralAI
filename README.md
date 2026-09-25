@@ -62,7 +62,7 @@ This integration makes **Mistral AI** available as a fully-featured conversation
 | Jinja2 system prompt | ✅ | Templates with `{{ now() }}`, `{{ ha_name }}` etc. |
 | Multilingual | ✅ | Responds in the user's language |
 | Continue conversation | ✅ | Home Assistant keeps the microphone open after a reply that ends in a question |
-| Web search | ✅ | Model-decided web search via the Agents API, or trigger phrases (Beta) |
+| Web search | ✅ | Model-decided web search via the Conversations API, or trigger phrases (Beta) |
 | Separate devices | ✅ | Conversation and STT appear as separate HA devices |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -195,10 +195,10 @@ There is no option for this: Home Assistant core decides. When a reply ends in a
 
 ### Web search (Beta)
 
-Web search is only available through Mistral's **Agents API**, which is a separate,
+Web search is only available through Mistral's **Conversations API**, which is a separate,
 slower endpoint than the regular chat completions call and **cannot carry Home
-Assistant tools**. A turn answered by the Agents API therefore cannot control
-your devices. Requires an agent-capable model (`mistral-small-latest`,
+Assistant tools**. A turn answered by the Conversations API therefore cannot control
+your devices. Requires a model that supports Mistral's built-in web search (`mistral-small-latest`,
 `mistral-medium-latest` or `mistral-large-latest`).
 
 **Web search routing** controls when that endpoint is used:
@@ -206,10 +206,10 @@ your devices. Requires an agent-capable model (`mistral-small-latest`,
 | Mode | Behaviour |
 |---|---|
 | **Let the model decide** (default) | Web search is offered to the model as a tool. It searches only when it judges a search is needed, and Home Assistant tools stay available — so one turn can search *and* control devices. |
-| **Always search** | Legacy behaviour: every request goes to the Agents API. Slower, and device control does not work on those turns. |
+| **Always search** | Legacy behaviour: every request goes to the Conversations API. Slower, and device control does not work on those turns. |
 
 > **Performance note:** enabling web search with **Always search** routes *every*
-> utterance — including "turn on the lamp" — through the Agents API. Use
+> utterance — including "turn on the lamp" — through the Conversations API. Use
 > **Let the model decide**, or set trigger phrases, to keep ordinary commands on
 > the fast path.
 
@@ -228,7 +228,7 @@ to let the routing mode decide.
 Trigger phrases are language-specific, so nothing is shipped by default. Dutch
 users might use `zoek op, zoek online, google`; German users `suche, google`.
 
-> Note: with trigger phrases set, a matching turn goes straight to the Agents API
+> Note: with trigger phrases set, a matching turn goes straight to the Conversations API
 > and so cannot control devices — that is the same trade-off as **Always search**,
 > just limited to utterances you opt into.
 
