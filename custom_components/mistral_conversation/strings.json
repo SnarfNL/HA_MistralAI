@@ -39,8 +39,17 @@
     "step": {
       "init": {
         "title": "Mistral AI Conversation settings",
+        "description": "Choose the model first. The next step shows the settings for that model; web search is only offered for models that support it (Mistral Small, Medium and Large).",
         "data": {
-          "model": "AI model",
+          "model": "AI model"
+        },
+        "data_description": {
+          "model": "Which Mistral model to use. Ministral-8b is recommended for home automation commands: fast, cost-effective and great at instruction-following. Ministral-14b is new (Dec 2025) and the strongest of the small edge models. Note: on a free/Experiment-tier API key, the pricier models (Medium, Large) are the ones most likely to be rate-limited or rejected — see the note next to each model below."
+        }
+      },
+      "settings": {
+        "title": "Settings for this model",
+        "data": {
           "prompt": "System prompt",
           "llm_hass_api": "Control Home Assistant",
           "temperature": "Temperature (creativity)",
@@ -51,7 +60,6 @@
           "tts_mode": "Text-to-speech mode"
         },
         "data_description": {
-          "model": "Which Mistral model to use. Ministral-8b is recommended for home automation commands: fast, cost-effective and great at instruction-following. Ministral-14b is new (Dec 2025) and the strongest of the small edge models. Note: on a free/Experiment-tier API key, the pricier models (Medium, Large) are the ones most likely to be rate-limited or rejected — see the note next to each model below.",
           "prompt": "Instructions for the AI. Supports Jinja2 templates — for example, the HA instance name via ha_name, or the current date via now(). See the README for the full list of variables.",
           "llm_hass_api": "Select which Home Assistant APIs the AI can use to control your devices. 'Assist' exposes the same entities as the built-in voice assistant.",
           "temperature": "0 = deterministic, 1 = creative. Mistral range: 0.0–1.0.",

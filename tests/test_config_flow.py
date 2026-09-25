@@ -126,11 +126,11 @@ async def test_options_flow_saves(
     hass: HomeAssistant, setup_integration: MockConfigEntry
 ) -> None:
     entry = setup_integration
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] is FlowResultType.FORM
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"model": "ministral-3b-latest", "llm_hass_api": [], "temperature": 0.3},
+    result = await _options(
+        hass,
+        entry,
+        "ministral-3b-latest",
+        {"llm_hass_api": [], "temperature": 0.3},
     )
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -200,3 +200,117 @@ async def test_reconfigure_cannot_connect_keeps_old_key(
     )
     assert result["errors"] == {"base": "cannot_connect"}
     assert entry.data["api_key"] == API_KEY
+
+
+# ---------------------------------------------------------------------------
+# Options in two steps; web search follows the model (MA-30)
+# ---------------------------------------------------------------------------
+
+
+async def _options(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    model: str,
+    settings: dict | None = None,
+):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["step_id"] == "init"
+    assert _fields(result) == {"model"}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"model": model}
+    )
+    assert result["step_id"] == "settings"
+    if settings is None:
+        return result
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], settings
+    )
+
+
+def _fields(result) -> set[str]:
+    return {str(key) for key in result["data_schema"].schema}
+
+
+def _default(result, name: str):
+    for key in result["data_schema"].schema:
+        if str(key) == name:
+            return key.default()
+    raise KeyError(name)
+
+
+WEB_FIELDS = {"web_search", "web_search_mode", "web_search_trigger"}
+
+
+async def _set_options(hass: HomeAssistant, entry: MockConfigEntry, **options) -> None:
+    hass.config_entries.async_update_entry(entry, options=options)
+    await hass.async_block_till_done()
+
+
+async def test_unsupported_model_hides_web_search(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    result = await _options(hass, setup_integration, "ministral-14b-latest")
+    assert not WEB_FIELDS & _fields(result)
+    assert {"prompt", "temperature", "max_tokens", "tts_mode"} <= _fields(result)
+
+
+async def test_supported_model_shows_web_search(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    result = await _options(hass, setup_integration, "mistral-small-latest")
+    assert WEB_FIELDS <= _fields(result)
+
+
+async def test_unsupported_model_saves_web_search_off(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    entry = setup_integration
+    await _set_options(hass, entry, model="mistral-small-latest", web_search=True)
+    result = await _options(hass, entry, "ministral-14b-latest", {})
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options["web_search"] is False
+    assert entry.options["model"] == "ministral-14b-latest"
+
+
+async def test_unsupported_model_keeps_mode_and_trigger(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    entry = setup_integration
+    await _set_options(
+        hass,
+        entry,
+        model="mistral-small-latest",
+        web_search=True,
+        web_search_mode="always",
+        web_search_trigger="zoek op",
+    )
+    await _options(hass, entry, "ministral-14b-latest", {})
+    await hass.async_block_till_done()
+    assert entry.options["web_search_mode"] == "always"
+    assert entry.options["web_search_trigger"] == "zoek op"
+
+
+async def test_switch_to_supported_model_turns_web_search_on(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    entry = setup_integration
+    await _set_options(hass, entry, model="ministral-14b-latest", web_search=False)
+    result = await _options(hass, entry, "mistral-small-latest")
+    assert _default(result, "web_search") is True
+
+
+async def test_first_options_with_supported_model_turn_web_search_on(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    result = await _options(hass, setup_integration, "mistral-large-latest")
+    assert _default(result, "web_search") is True
+
+
+async def test_manual_off_on_supported_model_is_kept(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    entry = setup_integration
+    await _set_options(hass, entry, model="mistral-small-latest", web_search=False)
+    result = await _options(hass, entry, "mistral-large-latest")
+    assert _default(result, "web_search") is False

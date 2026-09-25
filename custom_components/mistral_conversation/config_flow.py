@@ -32,6 +32,7 @@ from .const import (
     DOMAIN,
     TTS_MODES,
     WEB_SEARCH_MODES,
+    supports_web_search,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -142,30 +143,29 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class MistralOptionsFlow(config_entries.OptionsFlow):
-    """Options flow — HA injects self.config_entry as a read-only property."""
+    """Options in two steps: the model first, then the settings for it (MA-30).
+
+    Home Assistant cannot show or hide a field while the form is open, so the
+    web search fields are only offered in step 2, and only for a model that
+    supports web search. HA injects self.config_entry as a read-only property.
+    """
+
+    def __init__(self) -> None:
+        self._model: str = DEFAULT_MODEL
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
+        """Step 1: the model."""
         if user_input is not None:
-            # Clean up empty LLM API selection
-            if not user_input.get(CONF_LLM_HASS_API):
-                user_input.pop(CONF_LLM_HASS_API, None)
-            return self.async_create_entry(title="", data=user_input)
+            self._model = user_input[CONF_MODEL]
+            return await self.async_step_settings()
 
         opts = self.config_entry.options
-
-        # Build LLM API options list
-        hass_apis = [
-            selector.SelectOptionDict(label=api.name, value=api.id)
-            for api in llm.async_get_apis(self.hass)
-        ]
-
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    # ── Model ─────────────────────────────────────────────
                     vol.Optional(
                         CONF_MODEL,
                         default=opts.get(CONF_MODEL, DEFAULT_MODEL),
@@ -176,51 +176,98 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                             translation_key="model",
                         )
                     ),
-                    # ── System prompt ─────────────────────────────────────
-                    vol.Optional(
-                        CONF_PROMPT,
-                        default=opts.get(CONF_PROMPT, DEFAULT_PROMPT),
-                    ): selector.TemplateSelector(),
-                    # ── LLM API (Home Assistant device control) ───────────
-                    vol.Optional(
-                        CONF_LLM_HASS_API,
-                        description={
-                            "suggested_value": opts.get(CONF_LLM_HASS_API),
-                        },
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=hass_apis,
-                            multiple=True,
-                        )
-                    ),
-                    # ── Temperature ───────────────────────────────────────
-                    vol.Optional(
-                        CONF_TEMPERATURE,
-                        default=opts.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=0.0,
-                            max=1.0,
-                            step=0.05,
-                            mode=selector.NumberSelectorMode.SLIDER,
-                        )
-                    ),
-                    # ── Max tokens ────────────────────────────────────────
-                    vol.Optional(
-                        CONF_MAX_TOKENS,
-                        default=opts.get(CONF_MAX_TOKENS, DEFAULT_MAX_TOKENS),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=64,
-                            max=8192,
-                            step=64,
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
+                }
+            ),
+        )
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Step 2: everything else; web search only for a supporting model."""
+        opts = self.config_entry.options
+        capable = supports_web_search(self._model)
+
+        if user_input is not None:
+            # Clean up empty LLM API selection
+            if not user_input.get(CONF_LLM_HASS_API):
+                user_input.pop(CONF_LLM_HASS_API, None)
+            data = {**user_input, CONF_MODEL: self._model}
+            if not capable:
+                # Saved as off. Mode and trigger phrases keep their values, so
+                # they come back when a supporting model is chosen again.
+                data[CONF_WEB_SEARCH] = False
+                data[CONF_WEB_SEARCH_MODE] = opts.get(
+                    CONF_WEB_SEARCH_MODE, DEFAULT_WEB_SEARCH_MODE
+                )
+                data[CONF_WEB_SEARCH_TRIGGER] = opts.get(
+                    CONF_WEB_SEARCH_TRIGGER, DEFAULT_WEB_SEARCH_TRIGGER
+                )
+            return self.async_create_entry(title="", data=data)
+
+        # Build LLM API options list
+        hass_apis = [
+            selector.SelectOptionDict(label=api.name, value=api.id)
+            for api in llm.async_get_apis(self.hass)
+        ]
+
+        schema: dict[Any, Any] = {
+            # ── System prompt ─────────────────────────────────────
+            vol.Optional(
+                CONF_PROMPT,
+                default=opts.get(CONF_PROMPT, DEFAULT_PROMPT),
+            ): selector.TemplateSelector(),
+            # ── LLM API (Home Assistant device control) ───────────
+            vol.Optional(
+                CONF_LLM_HASS_API,
+                description={
+                    "suggested_value": opts.get(CONF_LLM_HASS_API),
+                },
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=hass_apis,
+                    multiple=True,
+                )
+            ),
+            # ── Temperature ───────────────────────────────────────
+            vol.Optional(
+                CONF_TEMPERATURE,
+                default=opts.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    max=1.0,
+                    step=0.05,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                )
+            ),
+            # ── Max tokens ────────────────────────────────────────
+            vol.Optional(
+                CONF_MAX_TOKENS,
+                default=opts.get(CONF_MAX_TOKENS, DEFAULT_MAX_TOKENS),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=64,
+                    max=8192,
+                    step=64,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+        }
+
+        if capable:
+            # Switching from a model without web search to one with it turns
+            # web search on; a manual "off" on a supporting model is kept.
+            previous = opts.get(CONF_MODEL, DEFAULT_MODEL)
+            web_default = (
+                opts.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH)
+                if supports_web_search(previous)
+                else True
+            )
+            schema.update(
+                {
                     # ── Web search (beta) ─────────────────────────────────
                     vol.Optional(
-                        CONF_WEB_SEARCH,
-                        default=opts.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH),
+                        CONF_WEB_SEARCH, default=web_default
                     ): selector.BooleanSelector(),
                     # ── Web search routing ────────────────────────────────
                     # 'model': the model calls a web_search tool when it needs
@@ -250,21 +297,25 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                             CONF_WEB_SEARCH_TRIGGER, DEFAULT_WEB_SEARCH_TRIGGER
                         ),
                     ): selector.TextSelector(),
-                    # ── TTS mode (stream vs batch) ────────────────────────
-                    # 'stream' uses Mistral's SSE WAV endpoint with sentence
-                    # pipelining for low time-to-first-audio. 'batch' issues a
-                    # single mp3 request. Direct tts.speak service calls
-                    # always use batch regardless of this setting.
-                    vol.Optional(
-                        CONF_TTS_MODE,
-                        default=opts.get(CONF_TTS_MODE, DEFAULT_TTS_MODE),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=TTS_MODES,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                            translation_key="tts_mode",
-                        )
-                    ),
                 }
-            ),
+            )
+
+        # ── TTS mode (stream vs batch) ────────────────────────
+        # 'stream' uses Mistral's SSE WAV endpoint with sentence
+        # pipelining for low time-to-first-audio. 'batch' issues a
+        # single mp3 request. Direct tts.speak service calls
+        # always use batch regardless of this setting.
+        schema[
+            vol.Optional(
+                CONF_TTS_MODE,
+                default=opts.get(CONF_TTS_MODE, DEFAULT_TTS_MODE),
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=TTS_MODES,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+                translation_key="tts_mode",
+            )
         )
+
+        return self.async_show_form(step_id="settings", data_schema=vol.Schema(schema))

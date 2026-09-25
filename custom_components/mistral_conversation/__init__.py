@@ -18,7 +18,14 @@ from homeassistant.helpers.event import async_track_time_interval
 from ._models import MODEL_CHECK_INTERVAL, async_check_model
 from ._web_search import WebSearchConversations
 from .api import MistralClient
-from .const import DOMAIN
+from .const import (
+    CONF_MODEL,
+    CONF_WEB_SEARCH,
+    DEFAULT_MODEL,
+    DEFAULT_WEB_SEARCH,
+    DOMAIN,
+    supports_web_search,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +67,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> b
     if error:
         raise ConfigEntryNotReady(f"Cannot connect to Mistral AI: {detail}")
 
+    _async_fix_web_search(hass, entry)
+
     errors: deque[dict[str, Any]] = deque(maxlen=10)
     entry.runtime_data = MistralRuntimeData(
         client=MistralClient(hass, entry, session, api_key, errors), errors=errors
@@ -81,6 +90,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> b
         async_track_time_interval(hass, _periodic_model_check, MODEL_CHECK_INTERVAL)
     )
     return True
+
+
+def _async_fix_web_search(hass: HomeAssistant, entry: MistralConfigEntry) -> None:
+    """Turn web search off when the saved model cannot use it (MA-30).
+
+    Runs before the update listener is registered, so this write does not
+    trigger a reload.
+    """
+    model = entry.options.get(CONF_MODEL, DEFAULT_MODEL)
+    web_search = entry.options.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH)
+    if web_search and not supports_web_search(model):
+        _LOGGER.warning("Web search turned off: model %s does not support it", model)
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, CONF_WEB_SEARCH: False}
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> bool:

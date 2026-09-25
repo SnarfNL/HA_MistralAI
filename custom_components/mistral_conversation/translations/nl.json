@@ -39,8 +39,17 @@
     "step": {
       "init": {
         "title": "Mistral AI Conversation instellingen",
+        "description": "Kies eerst het model. De volgende stap toont de instellingen voor dat model; zoeken op het web is alleen beschikbaar bij modellen die dat ondersteunen (Mistral Small, Medium en Large).",
         "data": {
-          "model": "AI-model",
+          "model": "AI-model"
+        },
+        "data_description": {
+          "model": "Welk Mistral-model wordt gebruikt. Ministral-8b is aanbevolen voor home automation: snel, goedkoop en sterk in opdrachten uitvoeren. Ministral-14b is nieuw (dec. 2025) en het sterkste van de kleine edge-modellen. Let op: met een gratis/Experiment-API-key lopen vooral de duurdere modellen (Medium, Large) het snelst tegen rate limits aan — zie de opmerking per model hieronder."
+        }
+      },
+      "settings": {
+        "title": "Instellingen voor dit model",
+        "data": {
           "prompt": "Systeemprompt",
           "llm_hass_api": "Home Assistant bedienen",
           "temperature": "Temperature (creativiteit)",
@@ -51,7 +60,6 @@
           "tts_mode": "Tekst-naar-spraak modus"
         },
         "data_description": {
-          "model": "Welk Mistral-model wordt gebruikt. Ministral-8b is aanbevolen voor home automation: snel, goedkoop en sterk in opdrachten uitvoeren. Ministral-14b is nieuw (dec. 2025) en het sterkste van de kleine edge-modellen. Let op: met een gratis/Experiment-API-key lopen vooral de duurdere modellen (Medium, Large) het snelst tegen rate limits aan — zie de opmerking per model hieronder.",
           "prompt": "Instructies voor de AI. Ondersteunt Jinja2 templates — bijvoorbeeld de HA-instantienaam via ha_name, of de huidige datum via now(). Zie de README voor de volledige lijst met variabelen.",
           "llm_hass_api": "Selecteer welke Home Assistant API de AI mag gebruiken om apparaten te bedienen. 'Assist' stelt dezelfde entiteiten beschikbaar als de ingebouwde spraakassistent.",
           "temperature": "0 = deterministisch, 1 = creatief. Mistral bereik: 0.0–1.0.",

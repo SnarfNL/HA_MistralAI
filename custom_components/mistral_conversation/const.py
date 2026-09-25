@@ -106,6 +106,11 @@ AGENT_CAPABLE_MODELS = [
     "mistral-large-latest",
 ]
 
+
+def supports_web_search(model: str) -> bool:
+    """True when *model* can use web search (Agents/Conversations API)."""
+    return any(model.startswith(m) for m in AGENT_CAPABLE_MODELS)
+
 # ---------------------------------------------------------------------------
 # STT
 # ---------------------------------------------------------------------------

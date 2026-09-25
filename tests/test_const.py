@@ -110,3 +110,13 @@ class ApiConstantsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_supports_web_search() -> None:
+    from custom_components.mistral_conversation.const import supports_web_search
+
+    assert supports_web_search("mistral-small-latest")
+    assert supports_web_search("mistral-medium-latest")
+    assert supports_web_search("mistral-large-latest")
+    assert not supports_web_search("ministral-14b-latest")
+    assert not supports_web_search("ministral-8b-latest")

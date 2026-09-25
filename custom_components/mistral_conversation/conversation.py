@@ -30,7 +30,6 @@ from .api import (
     translate_stream,
 )
 from .const import (
-    AGENT_CAPABLE_MODELS,
     CONF_MAX_TOKENS,
     CONF_MODEL,
     CONF_PROMPT,
@@ -48,6 +47,7 @@ from .const import (
     MAX_TOOL_ITERATIONS,
     WEB_SEARCH_MODE_ALWAYS,
     WEB_SEARCH_TOOL_NAME,
+    supports_web_search,
 )
 from .entity import CONVERSATION_DEVICE, MistralEntity
 
@@ -554,9 +554,7 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
 
         # Web search needs an agent-capable model — it is only reachable through
         # the Conversations API.
-        web_search_available = web_search and any(
-            model.startswith(m) for m in AGENT_CAPABLE_MODELS
-        )
+        web_search_available = web_search and supports_web_search(model)
 
         # Trigger phrases, when configured, are leading: a match goes straight to
         # the Conversations API and a non-match skips web search for this turn. An empty
