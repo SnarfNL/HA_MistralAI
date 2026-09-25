@@ -2,6 +2,5 @@
   "name": "Mistral AI Conversation",
   "content_in_root": false,
   "render_readme": true,
-  "homeassistant": "2025.10.0",
-  "github_release_notes": true
+  "homeassistant": "2025.10.0"
 }
