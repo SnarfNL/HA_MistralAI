@@ -16,7 +16,8 @@ import custom_components.mistral_conversation as init_module
 from custom_components.mistral_conversation import ai_task as ai_task_module
 from custom_components.mistral_conversation import config_flow as config_flow_module
 from custom_components.mistral_conversation import stt as stt_module
-from custom_components.mistral_conversation.const import DOMAIN
+
+from .helpers import attach_runtime
 
 
 class _Invalid(Exception):
@@ -98,11 +99,9 @@ class SttTimeoutTests(unittest.IsolatedAsyncioTestCase):
         metadata = SimpleNamespace(language="nl", sample_rate=16000, channel=1, bit_rate=16)
         for failure in FAILURES:
             with self.subTest(failure=repr(failure)):
-                runtime = SimpleNamespace(
-                    session=_RaisingSession(failure), headers={"Authorization": "Bearer k"}
-                )
-                hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
-                entity = stt_module.MistralSTTEntity(hass, SimpleNamespace(entry_id="entry1"))
+                entry = SimpleNamespace(entry_id="entry1")
+                attach_runtime(entry, _RaisingSession(failure))
+                entity = stt_module.MistralSTTEntity(SimpleNamespace(data={}), entry)
                 with (
                     patch.object(stt_module, "SpeechResult", lambda text, state: (text, state)),
                     patch.object(stt_module, "SpeechResultState", SimpleNamespace(ERROR="error")),

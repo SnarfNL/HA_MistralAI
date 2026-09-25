@@ -24,10 +24,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._api import describe_error, mistral_request, read_json
+from .api import describe_error, read_json
 from .const import (
     DOMAIN,
-    MISTRAL_API_BASE,
     STT_MODEL,
 )
 
@@ -158,8 +157,6 @@ class MistralSTTEntity(SpeechToTextEntity):
             sample_width=int(metadata.bit_rate) // 8,
         )
 
-        runtime = self.hass.data[DOMAIN][self._entry.entry_id]
-
         def build_form() -> aiohttp.FormData:
             # A FormData can only be sent once, so a 429 retry needs a new one.
             form = aiohttp.FormData()
@@ -175,17 +172,8 @@ class MistralSTTEntity(SpeechToTextEntity):
             return form
 
         try:
-            # Use only the Authorization header for multipart (no Content-Type override)
-            auth_header = {"Authorization": runtime.headers["Authorization"]}
-            async with mistral_request(
-                self.hass,
-                self._entry,
-                "post",
-                f"{MISTRAL_API_BASE}/audio/transcriptions",
-                headers=auth_header,
-                data_factory=build_form,
-                timeout=60,
-            ) as resp:
+            # Multipart: the client sends only the Authorization header.
+            async with self._entry.runtime_data.client.transcribe(build_form) as resp:
                 result = await read_json(resp)
 
         except HomeAssistantError as err:

@@ -19,7 +19,9 @@ from unittest.mock import patch
 
 from custom_components.mistral_conversation import const
 from custom_components.mistral_conversation import tts as tts_module
-from custom_components.mistral_conversation.const import DEFAULT_TTS_VOICE, DOMAIN
+from custom_components.mistral_conversation.const import DEFAULT_TTS_VOICE
+
+from .helpers import attach_runtime
 
 COMPONENT = Path(__file__).resolve().parent.parent / "custom_components" / "mistral_conversation"
 LEFTOVER_VOICE = "fr_marie_neutral"  # what an old config entry may still hold
@@ -52,10 +54,9 @@ class _FakeSession:
 
 
 def _make_entity(options=None, session=None) -> tts_module.MistralTTSEntity:
-    runtime = SimpleNamespace(session=session, headers={})
-    hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
     entry = SimpleNamespace(entry_id="entry1", options=options or {})
-    return tts_module.MistralTTSEntity(hass, entry)
+    attach_runtime(entry, session)
+    return tts_module.MistralTTSEntity(SimpleNamespace(data={}), entry)
 
 
 class DefaultOptionsTests(unittest.TestCase):

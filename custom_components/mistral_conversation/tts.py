@@ -49,25 +49,23 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._api import (
-    describe_error,
-    mistral_error,
-    mistral_request,
-    read_json,
-    translate_stream,
-)
 from ._streaming import (
     has_speakable_content,
     iter_sse_audio_chunks,
     pop_complete_sentences,
 )
 from ._voices import build_voice_list
+from .api import (
+    describe_error,
+    mistral_error,
+    read_json,
+    translate_stream,
+)
 from .const import (
     CONF_TTS_MODE,
     DEFAULT_TTS_MODE,
     DEFAULT_TTS_VOICE,
     DOMAIN,
-    MISTRAL_API_BASE,
     TTS_INTER_SENTENCE_SILENCE_BYTES,
     TTS_LANGUAGES,
     TTS_MAX_INFLIGHT_SENTENCES,
@@ -179,7 +177,7 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     async def async_will_remove_from_hass(self) -> None:
         """Unregister so the refresh button never talks to a removed entity."""
-        runtime = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id)
+        runtime = getattr(self._entry, "runtime_data", None)
         if runtime is not None and runtime.tts_entity is self:
             runtime.tts_entity = None
         await super().async_will_remove_from_hass()
@@ -198,7 +196,7 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     @property
     def _runtime(self):
-        return self.hass.data[DOMAIN][self._entry.entry_id]
+        return self._entry.runtime_data
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -250,17 +248,7 @@ class MistralTTSEntity(TextToSpeechEntity):
 
         try:
             while True:
-                async with mistral_request(
-                    self.hass,
-                    self._entry,
-                    "get",
-                    f"{MISTRAL_API_BASE}/audio/voices",
-                    params={"limit": limit, "offset": offset},
-                    timeout=10,
-                    # A failed fetch is not fatal: the last good list stays.
-                    log_level=logging.WARNING,
-                ) as resp:
-                    data = await read_json(resp)
+                data = await self._runtime.client.list_voices(offset, limit)
 
                 items = data.get("items") or []
                 all_items.extend(items)
@@ -310,14 +298,8 @@ class MistralTTSEntity(TextToSpeechEntity):
             "response_format": "mp3",
         }
 
-        async with mistral_request(
-            self.hass,
-            self._entry,
-            "post",
-            f"{MISTRAL_API_BASE}/audio/speech",
-            json=payload,
-            timeout=30,
-            log_context=f"voice={voice}",
+        async with self._runtime.client.speech(
+            payload, voice=voice, timeout=30
         ) as resp:
             # Mistral returns JSON with base64-encoded MP3 in audio_data
             data = await read_json(resp)
@@ -569,14 +551,8 @@ class MistralTTSEntity(TextToSpeechEntity):
         header_done = False
         request_start = time.monotonic()
         first_chunk_logged = False
-        async with mistral_request(
-            self.hass,
-            self._entry,
-            "post",
-            f"{MISTRAL_API_BASE}/audio/speech",
-            json=payload,
-            timeout=60,
-            log_context=f"voice={voice}",
+        async with self._runtime.client.speech(
+            payload, voice=voice, timeout=60
         ) as resp:
             async for audio in translate_stream(iter_sse_audio_chunks(resp)):
                 if not first_chunk_logged:

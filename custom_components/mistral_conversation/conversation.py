@@ -22,15 +22,14 @@ from homeassistant.helpers import intent, llm
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._api import (
+from ._web_search import build_conversation_payload
+from .api import (
     async_spoken_error,
     describe_error,
     is_unrecoverable,
-    mistral_request,
     read_json,
     translate_stream,
 )
-from ._web_search import build_conversation_payload
 from .const import (
     AGENT_CAPABLE_MODELS,
     CONF_MAX_TOKENS,
@@ -48,7 +47,6 @@ from .const import (
     DEFAULT_WEB_SEARCH_TRIGGER,
     DOMAIN,
     MAX_TOOL_ITERATIONS,
-    MISTRAL_API_BASE,
     WEB_SEARCH_MODE_ALWAYS,
     WEB_SEARCH_TOOL_NAME,
 )
@@ -471,7 +469,7 @@ class MistralConversationEntity(ConversationEntity):
 
     @property
     def _runtime(self):
-        return self.hass.data[DOMAIN][self._entry.entry_id]
+        return self._entry.runtime_data
 
     @property
     def supported_languages(self) -> list[str] | Literal["*"]:
@@ -742,23 +740,22 @@ class MistralConversationEntity(ConversationEntity):
         stateful = conv_id is not None
         mistral_conv_id = convs.get(conv_id) if stateful else None
         if mistral_conv_id:
-            url = f"{MISTRAL_API_BASE}/conversations/{mistral_conv_id}"
-            payload: dict[str, Any] = {"inputs": user_text, "store": True}
+            request = runtime.client.append_conversation(
+                mistral_conv_id,
+                _sanitize({"inputs": user_text, "store": True}),
+                model=model,
+            )
         else:
-            url = f"{MISTRAL_API_BASE}/conversations"
-            payload = build_conversation_payload(
-                model, user_text, language, store=stateful
+            request = runtime.client.start_conversation(
+                _sanitize(
+                    build_conversation_payload(
+                        model, user_text, language, store=stateful
+                    )
+                ),
+                model=model,
             )
 
-        async with mistral_request(
-            self.hass,
-            self._entry,
-            "post",
-            url,
-            json=_sanitize(payload),
-            timeout=90,
-            log_context=f"model={model}",
-        ) as resp:
+        async with request as resp:
             data = await read_json(resp)
 
         new_conv_id = data.get("conversation_id") or data.get("id")
@@ -792,14 +789,7 @@ class MistralConversationEntity(ConversationEntity):
     async def _delete_mistral_conversation(self, mistral_id: str) -> None:
         """Best-effort cleanup; a failure is only logged at debug level."""
         try:
-            async with mistral_request(
-                self.hass,
-                self._entry,
-                "delete",
-                f"{MISTRAL_API_BASE}/conversations/{mistral_id}",
-                timeout=15,
-                log_level=logging.DEBUG,
-            ):
+            async with self._runtime.client.delete_conversation(mistral_id):
                 pass
         except HomeAssistantError as err:
             _LOGGER.debug(
@@ -826,14 +816,8 @@ class MistralConversationEntity(ConversationEntity):
         appended to ``intercepted``. HA would otherwise try to execute a tool
         that isn't in its LLM API and raise.
         """
-        async with mistral_request(
-            self.hass,
-            self._entry,
-            "post",
-            f"{MISTRAL_API_BASE}/chat/completions",
-            json=payload,
-            timeout=90,
-            log_context=f"model={payload.get('model')}",
+        async with self._runtime.client.chat_completions(
+            payload, source="conversation"
         ) as resp:
             # Only reading Mistral's stream is translated; errors from HA tools
             # that run while the reply streams pass through unchanged.

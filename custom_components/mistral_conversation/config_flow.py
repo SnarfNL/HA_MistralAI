@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API
@@ -12,6 +11,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import llm, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .api import MistralClient
 from .const import (
     CHAT_MODELS,
     CONF_MAX_TOKENS,
@@ -31,7 +31,6 @@ from .const import (
     DEFAULT_WEB_SEARCH_MODE,
     DEFAULT_WEB_SEARCH_TRIGGER,
     DOMAIN,
-    MISTRAL_API_BASE,
     TTS_MODES,
     WEB_SEARCH_MODES,
 )
@@ -115,23 +114,14 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def _test_api_key(self, api_key: str) -> str | None:
-        session = async_get_clientsession(self.hass)
         try:
-            async with session.get(
-                f"{MISTRAL_API_BASE}/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status == 401:
-                    return "invalid_auth"
-                if resp.status != 200:
-                    return "cannot_connect"
-        except (aiohttp.ClientError, TimeoutError):
-            return "cannot_connect"
+            error, _detail = await MistralClient.validate_key(
+                async_get_clientsession(self.hass), api_key
+            )
         except Exception:  # pylint: disable=broad-except
             _LOGGER.exception("Unexpected error testing API key")
             return "unknown"
-        return None
+        return error
 
     @staticmethod
     def async_get_options_flow(

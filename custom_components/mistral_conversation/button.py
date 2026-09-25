@@ -41,7 +41,7 @@ class MistralRefreshVoicesButton(ButtonEntity):
 
     async def async_press(self) -> None:
         """Refresh the voice list; a failed refresh keeps the old list."""
-        runtime = self.hass.data[DOMAIN][self._entry.entry_id]
+        runtime = self._entry.runtime_data
         tts_entity = runtime.tts_entity
         if tts_entity is None or not await tts_entity.async_refresh_voices():
             raise HomeAssistantError(

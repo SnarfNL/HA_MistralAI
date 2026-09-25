@@ -17,11 +17,12 @@ import aiohttp
 from homeassistant.exceptions import ConfigEntryNotReady
 
 import custom_components.mistral_conversation as init_module
-from custom_components.mistral_conversation import _api
+from custom_components.mistral_conversation import api
 from custom_components.mistral_conversation import conversation as conv_module
 from custom_components.mistral_conversation import stt as stt_module
 from custom_components.mistral_conversation import tts as tts_module
-from custom_components.mistral_conversation.const import DOMAIN
+
+from .helpers import attach_runtime
 
 API_KEY = "sk-secret-key"
 
@@ -83,15 +84,13 @@ class SttRetryTests(unittest.IsolatedAsyncioTestCase):
         async def audio():
             yield b"\x00\x00" * 160
 
-        runtime = SimpleNamespace(
-            session=SimpleNamespace(request=request), headers={"Authorization": "Bearer k"}
-        )
-        hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
-        entity = stt_module.MistralSTTEntity(hass, SimpleNamespace(entry_id="entry1"))
+        entry = SimpleNamespace(entry_id="entry1")
+        attach_runtime(entry, SimpleNamespace(request=request))
+        entity = stt_module.MistralSTTEntity(SimpleNamespace(data={}), entry)
         metadata = SimpleNamespace(language="nl", sample_rate=16000, channel=1, bit_rate=16)
         with (
             patch.object(stt_module.aiohttp, "FormData", MagicMock(side_effect=lambda: MagicMock())),
-            patch.object(_api, "_sleep", AsyncMock()),
+            patch.object(api, "_sleep", AsyncMock()),
             patch.object(stt_module, "SpeechResult", lambda text, state: (text, state)),
             patch.object(stt_module, "SpeechResultState", SimpleNamespace(SUCCESS="ok", ERROR="error")),
         ):
@@ -105,12 +104,11 @@ class SttRetryTests(unittest.IsolatedAsyncioTestCase):
         async def audio():
             yield b"\x00\x00" * 160
 
-        runtime = SimpleNamespace(
-            session=SimpleNamespace(request=lambda *a, **k: _Response(200, {"text": None})),
-            headers={"Authorization": "Bearer k"},
+        entry = SimpleNamespace(entry_id="entry1")
+        attach_runtime(
+            entry, SimpleNamespace(request=lambda *a, **k: _Response(200, {"text": None}))
         )
-        hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
-        entity = stt_module.MistralSTTEntity(hass, SimpleNamespace(entry_id="entry1"))
+        entity = stt_module.MistralSTTEntity(SimpleNamespace(data={}), entry)
         metadata = SimpleNamespace(language="nl", sample_rate=16000, channel=1, bit_rate=16)
         with (
             patch.object(stt_module, "SpeechResult", lambda text, state: (text, state)),
@@ -122,11 +120,11 @@ class SttRetryTests(unittest.IsolatedAsyncioTestCase):
 
 class VoiceFetchAtStartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_fetch_runs_as_a_background_task(self) -> None:
-        runtime = SimpleNamespace(session=None, headers={}, tts_entity=None)
-        hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
+        hass = SimpleNamespace(data={})
         entry = SimpleNamespace(
             entry_id="entry1", options={}, async_create_background_task=MagicMock()
         )
+        runtime = attach_runtime(entry)
         entity = tts_module.MistralTTSEntity(hass, entry)
         refresh = AsyncMock()
         with (
@@ -146,9 +144,9 @@ class VoiceFetchAtStartupTests(unittest.IsolatedAsyncioTestCase):
 
 class DeleteConversationTests(unittest.IsolatedAsyncioTestCase):
     def _entity(self, request):
-        runtime = SimpleNamespace(session=SimpleNamespace(request=request), headers={"A": "b"})
-        hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
+        hass = SimpleNamespace(data={})
         entry = SimpleNamespace(entry_id="entry1", options={}, async_start_reauth=MagicMock())
+        attach_runtime(entry, SimpleNamespace(request=request))
         return conv_module.MistralConversationEntity(hass, entry)
 
     async def test_delete_uses_the_shared_helper(self) -> None:
