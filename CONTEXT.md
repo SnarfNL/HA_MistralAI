@@ -17,9 +17,11 @@ the maintainer, who sometimes talks to agents in Dutch; the repo itself is Engli
 - **Exposed entity** [gedeelde entiteit] — an entity the user has made visible to Assist; only these may be controlled or named to the model.
 - **AI Task** — HA's non-conversational LLM entity (`ai_task.generate_data`, later `generate_image`), used from automations.
 - **Config entry** — one configured instance of the integration (holds the API key). **Options** are its editable settings. **Subentry** — a child configuration under a config entry (planned: one per conversation agent / AI Task, MA-12).
-- **Runtime data** — per-entry objects created at setup (HTTP session, headers, caches). Currently in `hass.data`, moving to `entry.runtime_data` (MA-10).
+- **Runtime data** — per-entry objects created at setup (the Mistral client, the last errors, caches), in `entry.runtime_data` (MA-10).
 - **Continue conversation** [doorluisteren] — the satellite keeps listening after a reply, without a new wake word. Decided by HA core from the chat log (reply ends in a question mark); the integration has no switch for it.
-- **Repair issue** — a user-facing HA notification with an optional fix flow.
+- **Repair issue** — a user-facing HA notification under *Settings → Repairs* with an optional fix flow. Here: *model retired*, with a button that switches to a suggested model (MA-14).
+- **Diagnostics** — the JSON file a user downloads from the integration's ⋮ menu to attach to a bug report; the API key is redacted (MA-14).
+- **Reconfigure** — HA's flow for changing a config entry's data (here: the API key) without removing it (MA-14).
 - **Spoken error** [gesproken foutmelding] — a short, translated sentence the conversation agent returns instead of raising when Mistral fails, so the satellite says what went wrong. In the pipeline language; English when there is no translation.
 - **Reauth** — HA's flow for re-entering the API key. Started automatically when Mistral answers 401.
 

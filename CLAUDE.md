@@ -8,12 +8,16 @@ Home Assistant custom integration (HACS) that connects Mistral AI to HA: convers
 custom_components/mistral_conversation/
   __init__.py      setup/unload, MistralRuntimeData (entry.runtime_data: client, errors, ...)
   api.py           MistralClient (every Mistral call), error helpers
+  entity.py        MistralEntity base class: entry, runtime, client, device info
+  _models.py       model availability, replacement rule, retired-model check
+  repairs.py       fix flow for the retired-model repair issue
+  diagnostics.py   diagnostics download (API key redacted)
   conversation.py  conversation entity, chat_log conversion, SSE parser, web search
   ai_task.py       AI Task entity (generate_data, image attachments)
   stt.py           Voxtral STT entity
   tts.py           TTS entity: batch (mp3) and pipelined streaming (wav)
   _streaming.py    stdlib-only helpers: sentence splitter, TTS SSE parser
-  config_flow.py   config flow, reauth, options flow
+  config_flow.py   config flow, reauth, reconfigure, two-step options flow
   const.py         config keys, defaults, model and voice lists
   strings.json + translations/{en,nl,fr}.json
 tests/             pytest on real HA (pytest-homeassistant-custom-component); API mocked with aioclient_mock + tests/fixtures
