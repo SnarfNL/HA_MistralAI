@@ -141,7 +141,7 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> "MistralOptionsFlow":
+    ) -> MistralOptionsFlow:
         return MistralOptionsFlow()
 
 

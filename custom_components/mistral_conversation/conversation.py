@@ -113,9 +113,9 @@ def _schema_to_openapi(
 
     try:
         try:
-            from probatio import to_openapi as convert  # noqa: PLC0415
+            from probatio import to_openapi as convert
         except ImportError:
-            from voluptuous_openapi import convert  # noqa: PLC0415
+            from voluptuous_openapi import convert
         result = convert(schema, custom_serializer=custom_serializer)
     except Exception:  # pylint: disable=broad-except
         _LOGGER.debug("Could not serialize %s, using empty schema", log_context)
@@ -316,7 +316,7 @@ def _convert_chat_log_to_messages(
 
 async def _async_stream_delta(
     resp: aiohttp.ClientResponse,
-) -> AsyncGenerator[dict[str, Any], None]:
+) -> AsyncGenerator[dict[str, Any]]:
     """Parse SSE stream from Mistral and yield delta dicts for HA's chat_log.
 
     Yields, in order:
@@ -334,7 +334,7 @@ async def _async_stream_delta(
     # Required first delta — see module-level note above.
     yield {"role": "assistant"}
 
-    async def _flush() -> AsyncGenerator[dict[str, Any], None]:
+    async def _flush() -> AsyncGenerator[dict[str, Any]]:
         """Yield each buffered tool call as its own dict and clear the buffer."""
         for tc in current_tool_calls.values():
             try:
@@ -402,10 +402,10 @@ async def _async_stream_delta(
 
 
 async def _filter_intercepted_tool(
-    stream: AsyncGenerator[dict[str, Any], None],
+    stream: AsyncGenerator[dict[str, Any]],
     tool_name: str,
     collected: list[str],
-) -> AsyncGenerator[dict[str, Any], None]:
+) -> AsyncGenerator[dict[str, Any]]:
     """Strip calls to ``tool_name`` from a delta stream, collecting their queries.
 
     The named tool is one we service ourselves (web search via the Agents API),

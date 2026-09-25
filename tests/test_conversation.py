@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import json
 import unittest
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import patch
 
 from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
 
-from mistral_conversation.conversation import (  # noqa: E402
+from mistral_conversation.conversation import (
     _async_stream_delta,
     _format_tool,
     _sanitize,
@@ -200,7 +201,7 @@ class _FakeResponse:
 
 
 def _data_frame(payload: dict[str, Any]) -> bytes:
-    return f"data: {json.dumps(payload)}\n\n".encode("utf-8")
+    return f"data: {json.dumps(payload)}\n\n".encode()
 
 
 def _content_delta(text: str) -> dict[str, Any]:

@@ -13,14 +13,15 @@ left behind by an intercepted call.
 from __future__ import annotations
 
 import unittest
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
-from homeassistant.components import conversation as ha_conversation  # noqa: E402
+from homeassistant.components import conversation as ha_conversation
 
 from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
 
-from mistral_conversation.const import WEB_SEARCH_TOOL_NAME  # noqa: E402
-from mistral_conversation.conversation import (  # noqa: E402
+from mistral_conversation.const import WEB_SEARCH_TOOL_NAME
+from mistral_conversation.conversation import (
     _convert_chat_log_to_messages,
     _filter_intercepted_tool,
     _resolve_trigger,

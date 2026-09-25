@@ -4,7 +4,7 @@ from __future__ import annotations
 import io
 import logging
 import wave
-from typing import AsyncIterable
+from collections.abc import AsyncIterable
 
 import aiohttp
 from homeassistant.components.stt import (

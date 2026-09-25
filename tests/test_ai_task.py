@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 
 from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
 
-from mistral_conversation.ai_task import MistralAITaskEntity  # noqa: E402
+from mistral_conversation.ai_task import MistralAITaskEntity
 
 
 # ---------------------------------------------------------------------------

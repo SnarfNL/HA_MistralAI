@@ -15,10 +15,10 @@ import base64
 import importlib.util
 import json
 import unittest
+from collections.abc import AsyncIterator
 from pathlib import Path
 from types import ModuleType
-from typing import Any, AsyncIterator
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Module loading (skip the package __init__ which depends on Home Assistant)
@@ -156,7 +156,7 @@ class SentenceSegmenterTests(unittest.TestCase):
         self.assertEqual(rest, "🌿✨💫🌹🌷🌸💐🌼🌻🌺.")
 
     def test_punctuation_only_candidate_is_rejected(self) -> None:
-        sentences, rest = pop_complete_sentences("...???!!!....", MIN_CHARS)
+        sentences, _rest = pop_complete_sentences("...???!!!....", MIN_CHARS)
         self.assertEqual(sentences, [])
 
     def test_emoji_decoration_at_end_of_long_sentence_kept(self) -> None:
@@ -241,7 +241,7 @@ def _b64(data: bytes) -> str:
 
 
 def _frame(event: str, payload: dict[str, Any]) -> bytes:
-    return f"event: {event}\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n".encode()
 
 
 class SseAudioChunkTests(unittest.IsolatedAsyncioTestCase):

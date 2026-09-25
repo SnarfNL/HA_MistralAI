@@ -148,7 +148,7 @@ class MistralAITaskEntity(AITaskEntity):
         ``voluptuous`` and HA's own ``selector`` module, both always
         present.
         """
-        from homeassistant.helpers import llm  # noqa: PLC0415
+        from homeassistant.helpers import llm
 
         custom_serializer = getattr(llm, "selector_serializer", None) or getattr(
             llm, "_selector_serializer", None
@@ -160,8 +160,8 @@ class MistralAITaskEntity(AITaskEntity):
             return result
 
         try:
-            import voluptuous as vol  # noqa: PLC0415
-            from homeassistant.helpers import selector as sel  # noqa: PLC0415
+            import voluptuous as vol
+            from homeassistant.helpers import selector as sel
 
             properties: dict[str, Any] = {}
             required: list[str] = []

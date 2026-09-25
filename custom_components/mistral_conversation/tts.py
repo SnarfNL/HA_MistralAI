@@ -26,7 +26,8 @@ import asyncio
 import base64
 import logging
 import time
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import aiohttp
 from homeassistant.components.tts import (
@@ -338,9 +339,9 @@ class MistralTTSEntity(TextToSpeechEntity):
     # ------------------------------------------------------------------
     async def _pipelined_stream(
         self,
-        message_gen: AsyncGenerator[str, None],
+        message_gen: AsyncGenerator[str],
         voice: str,
-    ) -> AsyncGenerator[bytes, None]:
+    ) -> AsyncGenerator[bytes]:
         """Aggressive sentence-pipelined TTS generator.
 
         Architecture::

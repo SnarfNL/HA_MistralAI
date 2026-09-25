@@ -9,7 +9,7 @@ import unittest
 
 from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
 
-from mistral_conversation.stt import LANGUAGE_OPTIONS, _pcm_to_wav  # noqa: E402
+from mistral_conversation.stt import LANGUAGE_OPTIONS, _pcm_to_wav
 
 
 class PcmToWavTests(unittest.TestCase):
