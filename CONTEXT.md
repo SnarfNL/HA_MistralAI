@@ -1,8 +1,8 @@
 # CONTEXT.md
 
 Shared vocabulary for HA_MistralAI. Use these terms consistently in code, issues,
-PRs and conversations with agents. Dutch equivalents in brackets, because the
-maintainer and PR descriptions use Dutch.
+PRs and conversations with agents. Dutch equivalents in brackets are aliases for
+the maintainer, who sometimes talks to agents in Dutch; the repo itself is English.
 
 ## Home Assistant side
 
@@ -31,7 +31,9 @@ maintainer and PR descriptions use Dutch.
 - **Voxtral (STT)** — Mistral's speech-to-text models. *Batch* = upload a whole WAV; *realtime* = WebSocket streaming (MA-24).
 - **Context bias** — up to 100 words/phrases sent to Voxtral to improve recognition of names (MA-18).
 - **Voice** [stem] — a Mistral TTS voice. Has an `id` (UUID, used for synthesis) and a `name` (shown in pickers). *Custom voice* = created by the user in Mistral Studio or by cloning.
-- **Account voices** — the presets and custom voices Mistral returns for the user's API key. Shown in the voice picker of Settings → Voice assistants; the static preset list is only a stand-in until they have been fetched once.
+- **Account voices** — the presets and custom voices Mistral returns for the user's API key. They are the only voices shown in the voice picker of Settings → Voice assistants; the picker is empty until they have been fetched once. Preset names are shown as readable labels (`Paul – Angry (English)`); the `voice_id` is never changed.
+- **Refresh voices** — the button on the Mistral AI TTS device that re-fetches the account voices, so a voice made in Mistral Studio appears without a restart. A failed refresh keeps the last good list.
+- **Supported language vs voice accent** — a *supported language* is one whose words the TTS model knows (9 for Voxtral TTS). A *voice accent* is how a given voice sounds; a preset voice speaks every supported language, with its own accent.
 - **Default voice** — the built-in voice used when neither the voice assistant nor a `tts.speak` call names one. Not user-configurable; the voice is chosen in the assistant settings.
 - **Free tier / Experiment tier** — rate-limited Mistral API keys; Medium and Large are throttled first.
 

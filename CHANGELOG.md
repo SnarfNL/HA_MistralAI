@@ -16,6 +16,9 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 - **Fixed:** Assistant turns carrying neither text nor tool calls are no longer sent to Mistral — they were rejected with HTTP 400 `Assistant message must have either content or tool_calls, but not none.` (code 3240).
 - **Added:** 29 unit tests for trigger resolution, tool-call interception, and the content-less-assistant-turn guard.
 - **Fixed:** streaming TTS stays playable when the first sentence fails (MA-01).
+- **Fixed:** STT now offers the 13 languages Voxtral documents (was 60) and TTS the 9 documented ones (was 11, including four that are not supported). The stale `stt_language` texts are removed. MA-06.
+- **Changed:** The voice picker lists only the voices of your Mistral account (presets and custom voices), with readable names such as `Paul – Angry (English)`. The static preset list is gone; the picker is empty until Home Assistant has fetched the account voices. MA-13.
+- **Added:** A **Refresh voices** button on the Mistral AI TTS device re-fetches the account voices without restarting Home Assistant; a failed refresh keeps the previous list. MA-13.
 - **Changed:** The *Text-to-speech voice* option is removed from the integration options. Choose the voice under Settings → Voice assistants, or pass `voice` in `tts.speak`. Without a voice the built-in default (`en_paul_neutral`) is used; a voice saved in the old option is no longer used. Fixes #75.
 
 ---

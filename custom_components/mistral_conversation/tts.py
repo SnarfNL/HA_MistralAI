@@ -55,6 +55,7 @@ from ._streaming import (
     iter_sse_audio_chunks,
     pop_complete_sentences,
 )
+from ._voices import build_voice_list
 from .const import (
     CONF_TTS_MODE,
     DEFAULT_TTS_MODE,
@@ -62,11 +63,11 @@ from .const import (
     DOMAIN,
     MISTRAL_API_BASE,
     TTS_INTER_SENTENCE_SILENCE_BYTES,
+    TTS_LANGUAGES,
     TTS_MAX_INFLIGHT_SENTENCES,
     TTS_MIN_SENTENCE_CHARS,
     TTS_MODE_BATCH,
     TTS_MODEL,
-    TTS_VOICES,
     TTS_WAV_HEADER_SIZE,
 )
 
@@ -118,6 +119,18 @@ async def async_setup_entry(
 # ---------------------------------------------------------------------------
 
 
+def tts_device_info(entry: ConfigEntry) -> DeviceInfo:
+    """Device shared by the TTS entity and its refresh button."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{entry.entry_id}_tts")},
+        name="Mistral AI TTS",
+        manufacturer="Mistral AI",
+        model=TTS_MODEL,
+        entry_type=DeviceEntryType.SERVICE,
+        configuration_url="https://docs.mistral.ai/capabilities/audio_generation",
+    )
+
+
 class MistralTTSEntity(TextToSpeechEntity):
     """Mistral AI text-to-speech entity.
 
@@ -136,9 +149,9 @@ class MistralTTSEntity(TextToSpeechEntity):
         self.hass = hass
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_tts"
-        # Populated once in async_added_to_hass from GET /v1/audio/voices.
-        # None means "not fetched yet" → async_get_supported_voices() falls
-        # back to the static TTS_VOICES list.
+        # The account's voices, from GET /v1/audio/voices. None means "not
+        # fetched yet"; the picker then shows no voices. There is no static
+        # fallback: only voices that really exist on the account are offered.
         self._voice_cache: list[Voice] | None = None
 
     async def async_added_to_hass(self) -> None:
@@ -146,11 +159,31 @@ class MistralTTSEntity(TextToSpeechEntity):
 
         async_get_supported_voices() is a synchronous HA callback and cannot
         await, so the network round-trip to GET /v1/audio/voices has to
-        happen here and be cached. Failures degrade gracefully to the static
-        list — see _async_fetch_voices.
+        happen here and be cached. If it fails the picker stays empty until
+        the "Refresh voices" button succeeds.
         """
         await super().async_added_to_hass()
-        self._voice_cache = await self._async_fetch_voices()
+        self._runtime.tts_entity = self
+        await self.async_refresh_voices()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister so the refresh button never talks to a removed entity."""
+        runtime = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id)
+        if runtime is not None and runtime.tts_entity is self:
+            runtime.tts_entity = None
+        await super().async_will_remove_from_hass()
+
+    async def async_refresh_voices(self) -> bool:
+        """Re-fetch the account's voices; return False if that failed.
+
+        A failed fetch keeps the last good list, so one bad request never
+        empties the picker.
+        """
+        voices = await self._async_fetch_voices()
+        if voices is None:
+            return False
+        self._voice_cache = voices
+        return True
 
     @property
     def _runtime(self):
@@ -158,14 +191,7 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._entry.entry_id}_tts")},
-            name="Mistral AI TTS",
-            manufacturer="Mistral AI",
-            model=TTS_MODEL,
-            entry_type=DeviceEntryType.SERVICE,
-            configuration_url="https://docs.mistral.ai/capabilities/audio_generation",
-        )
+        return tts_device_info(self._entry)
 
     @property
     def default_language(self) -> str:
@@ -174,8 +200,8 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     @property
     def supported_languages(self) -> list[str]:
-        """Languages exposed to HA; Mistral TTS handles all of these natively."""
-        return ["en", "nl", "fr", "de", "es", "it", "pt", "pl", "ru", "ja", "zh"]
+        """Languages Voxtral TTS supports (see TTS_LANGUAGES)."""
+        return list(TTS_LANGUAGES)
 
     @property
     def supported_options(self) -> list[str]:
@@ -187,40 +213,26 @@ class MistralTTSEntity(TextToSpeechEntity):
         return {"voice": DEFAULT_TTS_VOICE}
 
     def async_get_supported_voices(self, language: str) -> list[Voice]:
-        """Return available Mistral TTS voices for the Voice Assistants dialog.
+        """Return the account's voices for the Voice Assistants dialog.
 
-        Prefers the account voice list fetched in async_added_to_hass —
-        presets *and* custom voices, each with its human-readable name and
-        its real voice_id (a UUID). Falls back to the static TTS_VOICES list
-        if the fetch hasn't finished yet or failed.
+        Presets *and* custom voices, each with a readable label and its real
+        voice_id. Empty until the first successful fetch.
         """
-        if self._voice_cache is not None:
-            return self._voice_cache
-        return [Voice(voice_id=v, name=v.replace("_", " ").title()) for v in TTS_VOICES]
+        return self._voice_cache or []
 
-    async def _async_fetch_voices(self) -> list[Voice]:
+    async def _async_fetch_voices(self) -> list[Voice] | None:
         """Fetch all voices (presets + custom) from the Mistral account.
 
         GET /v1/audio/voices is paginated — the default page size can be as
-        low as 10 — and was being called with no ``limit``/``offset``, so
-        only the first page ever came back. Accounts with more than one
-        page of voices (any account with >10 preset + custom voices
-        combined) would silently lose everything after the first page: a
-        non-English preset or a custom voice could be missing from the
-        Voice Assistants picker even though it exists on the account and
-        even though the integration's own Configure page — which reads the
-        saved default option, not a live fetch — could still show/save it
-        (#32, #33). This loops with ``limit``/``offset`` until ``total``
-        items are collected.
+        low as 10 — so this loops with ``limit``/``offset`` until ``total``
+        items are collected (#32, #33).
 
-        Each item carries a separate ``id`` (UUID, used as voice_id in
-        synthesis) and ``name`` (human-readable, shown in the picker). On
-        any failure — network error, non-2xx, empty list — this returns the
-        static TTS_VOICES list so the picker is never empty.
+        Each item carries a separate ``id`` (used as voice_id in synthesis)
+        and ``name`` (shown in the picker, made readable by
+        ``build_voice_list``). Returns None on any failure — network error,
+        timeout, non-2xx, empty list — so the caller can keep the last good
+        list.
         """
-        static_fallback = [
-            Voice(voice_id=v, name=v.replace("_", " ").title()) for v in TTS_VOICES
-        ]
         runtime = self._runtime
         all_items: list[dict[str, Any]] = []
         limit = 100
@@ -237,11 +249,11 @@ class MistralTTSEntity(TextToSpeechEntity):
                     if resp.status >= 400:
                         body = await resp.text()
                         _LOGGER.warning(
-                            "Mistral voices fetch HTTP %s — using static list. body=%s",
+                            "Mistral voices fetch HTTP %s. body=%s",
                             resp.status,
                             body,
                         )
-                        return static_fallback
+                        return None
                     data = await resp.json()
 
                 items = data.get("items") or []
@@ -251,20 +263,17 @@ class MistralTTSEntity(TextToSpeechEntity):
                 offset += len(items)
                 if not items or offset >= total:
                     break
-        except aiohttp.ClientError as err:
-            _LOGGER.warning(
-                "Mistral voices fetch failed (%s) — using static list.", err
-            )
-            return static_fallback
+        except (aiohttp.ClientError, TimeoutError) as err:
+            _LOGGER.warning("Mistral voices fetch failed (%s).", err)
+            return None
 
         voices = [
-            Voice(voice_id=item["id"], name=item.get("name") or item["id"])
-            for item in all_items
-            if item.get("id")
+            Voice(voice_id=voice_id, name=label)
+            for voice_id, label in build_voice_list(all_items)
         ]
         if not voices:
-            _LOGGER.warning("Mistral voices list empty — using static list.")
-            return static_fallback
+            _LOGGER.warning("Mistral voices list is empty.")
+            return None
 
         _LOGGER.debug("Loaded %d Mistral voices from account", len(voices))
         return voices

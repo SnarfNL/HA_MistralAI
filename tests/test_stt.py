@@ -116,5 +116,15 @@ class LanguageOptionsTests(unittest.TestCase):
             self.assertIn(required, codes)
 
 
+class DocumentedLanguagesTests(unittest.TestCase):
+    """The picker offers exactly the 13 languages Voxtral documents."""
+
+    def test_exactly_the_thirteen_documented_languages(self) -> None:
+        self.assertSetEqual(
+            {c for c, _ in LANGUAGE_OPTIONS},
+            {"ar", "de", "en", "es", "fr", "hi", "it", "ja", "ko", "nl", "pt", "ru", "zh"},
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -40,7 +40,6 @@
           "web_search": "Webzoeken inschakelen (Beta)",
           "web_search_mode": "Webzoeken-routering",
           "web_search_trigger": "Triggerwoorden voor webzoeken (optioneel)",
-          "stt_language": "Spraakherkenning taal (STT)",
           "tts_mode": "Tekst-naar-spraak modus"
         },
         "data_description": {
@@ -52,7 +51,6 @@
           "web_search": "Als ingeschakeld kan de AI het web doorzoeken voor actuele informatie. Gebruikt Mistral's Conversations API (beta). Vereist een model dat agents ondersteunt (mistral-medium-latest of mistral-large-latest).",
           "web_search_mode": "'Laat het model beslissen' (aanbevolen): de AI zoekt alleen wanneer dat nodig is en kan in dezelfde opdracht nog steeds je apparaten bedienen. 'Altijd zoeken': elke opdracht gaat via de Conversations API — langzamer, en apparaatbesturing werkt dan niet.",
           "web_search_trigger": "Optioneel. Door komma's gescheiden zinnen, bijvoorbeeld 'zoek op, zoek online, google'. Als dit is ingevuld, gaat dit vóór de routering: alleen opdrachten die met zo'n zin beginnen zoeken op het web (de zin zelf wordt uit de zoekopdracht gehaald), alle andere opdrachten zoeken nooit. Laat leeg om de routering te laten beslissen.",
-          "stt_language": "Taal voor Voxtral spraakherkenning. Laat leeg voor automatische detectie.",
           "tts_mode": "Streaming: lage latentie via SSE WAV met pipelining per zin. Batch: één enkele mp3-aanvraag, hogere latentie maar kleinere antwoorden cachen goed. De tts.speak service gebruikt altijd batch."
         }
       }
@@ -80,6 +78,18 @@
         "mistral-medium-latest": "Mistral Medium — nodig voor websearch; ⚠️ betaalde tier, vaak rate-limited op gratis API-keys",
         "mistral-large-latest": "Mistral Large — meest capabel; ⚠️ betaalde tier, vaak rate-limited op gratis API-keys"
       }
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh_voices": {
+        "name": "Stemmen verversen"
+      }
+    }
+  },
+  "exceptions": {
+    "voices_refresh_failed": {
+      "message": "De stemmen konden niet worden ververst. Zie het Home Assistant-log voor details."
     }
   }
 }

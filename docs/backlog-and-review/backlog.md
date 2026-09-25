@@ -125,22 +125,22 @@ Als gebruiker wil ik dat de microfoon alleen open blijft als ik die optie aanzet
 
 ---
 
-## MA-06 · Juiste talenlijsten en opgeruimde strings
+## MA-06 · Correct language lists and cleaned-up strings
 
 Labels: `backlog` `type:bug` `priority:must` `release:1-stabiel` `effort:S`
-Status: open
+Status: in progress (branch `feat/ma-06-ma-13-languages-and-voice-refresh`)
 
-Als beheerder wil ik alleen talen kunnen kiezen die Mistral ondersteunt, zodat ik geen pipeline bouw die stil faalt.
+As an administrator I only want to pick languages Mistral supports, so I do not build a pipeline that fails silently.
 
-**Acceptatiecriteria**
+**Acceptance criteria**
 
-- [ ] STT meldt de 13 talen van Voxtral Transcribe 2 (incl. `nl`).
-- [ ] TTS meldt de 9 talen van Voxtral TTS (en, fr, es, pt, it, nl, de, hi, ar).
-- [ ] `strings.json` en vertalingen noemen geen `stt_language` en geen voice “Nova” meer.
+- [ ] STT reports the 13 languages of Voxtral Transcribe 2 (en, zh, hi, es, ar, fr, pt, ru, de, ja, ko, it, nl).
+- [ ] TTS reports the 9 languages of Voxtral TTS (en, fr, es, pt, it, nl, de, hi, ar).
+- [ ] `strings.json` and the translations no longer mention `stt_language` or the voice "Nova".
 
-**Techniek:** lijsten gelijktrekken met de [STT-docs](https://docs.mistral.ai/studio/audio/speech_to_text) en [TTS-docs](https://docs.mistral.ai/studio/audio/text_to_speech). Review-bevinding C7.
+**Notes:** language support is about the words the model knows; the preset voices speak all 9 languages with their own accent. Aligned with the [STT docs](https://docs.mistral.ai/studio/audio/speech_to_text) and [TTS docs](https://docs.mistral.ai/studio/audio/text_to_speech). Review finding C7.
 
-**Schatting:** Claude 15 min + test 5 min · ≈ 0,3–0,6 M tokens
+**Estimate:** Claude 15 min + test 5 min · ≈ 0.3–0.6 M tokens
 
 ---
 
@@ -255,27 +255,27 @@ Als beheerder wil ik meerdere Mistral-agents met elk een eigen model, prompt en 
 
 ---
 
-## MA-13 · Stemlijst van het account, met verversknop
+## MA-13 · Voice list from the account, with refresh button
 
 Labels: `backlog` `type:feature` `priority:should` `release:2-ha-native` `effort:S`
-Status: open
+Status: in progress (branch `feat/ma-06-ma-13-languages-and-voice-refresh`)
 
-Als beheerder wil ik dat de stemkiezer in Instellingen → Spraakassistenten de stemmen van mijn Mistral-account toont, ook de eigen voices uit Mistral Studio, en dat ik die lijst kan verversen als ik een nieuwe voice maak.
+As an administrator I want the voice picker in Settings → Voice assistants to list the voices of my Mistral account, including custom voices made in Mistral Studio, and to refresh that list when I create a new one.
 
-De stem kies je alleen in de assistent-instellingen (of met de optie `voice` van `tts.speak`); het optiescherm van de integratie heeft geen stemveld meer (zie #75).
+The voice is chosen only in the assistant settings (or via the `voice` option of `tts.speak`); the integration options dialog has no voice field (see #75).
 
-**Acceptatiecriteria**
+**Acceptance criteria**
 
-- [ ] De kiezer toont de voices van het account: presets en eigen voices (naam als label, ID als waarde).
-- [ ] Een knop “Voices verversen” (categorie configuratie) op het apparaat Mistral AI TTS haalt de lijst opnieuw op, zonder Home Assistant te herstarten.
-- [ ] Mislukt het verversen, dan blijft de laatste goede lijst staan.
-- [ ] Tot de eerste geslaagde ophaalactie toont de kiezer de statische presetlijst.
-- [ ] Tests: een eigen voice uit de API verschijnt in de kiezer; een mislukte verversing behoudt de vorige lijst; vóór de eerste ophaalactie geldt de statische lijst.
-- [ ] CHANGELOG.md heeft een regel onder `### Unreleased`.
+- [ ] The picker shows only the account's voices: presets and custom voices, with readable labels for presets (`Paul – Angry (English)`), custom voices first.
+- [ ] A "Refresh voices" button (config category) on the Mistral AI TTS device re-fetches the list without restarting Home Assistant.
+- [ ] If a refresh fails, the last good list is kept.
+- [ ] There is no static fallback list: the picker is empty until the first successful fetch.
+- [ ] Tests: a custom voice returned by the API appears in the picker; a failed refresh keeps the previous list; the picker is empty before the first fetch; label and ordering rules.
+- [ ] CHANGELOG.md has a line under `### Unreleased`.
 
-**Techniek:** het ophalen bestaat al (`_async_fetch_voices`, gepagineerd) maar draait nu één keer in `async_added_to_hass`; deze story voegt een `button`-platform en het verversen toe. Preset-slugs zoals `en_paul_neutral` werken als `voice_id` (getest met `tts.speak`). Geen vrije invoer en geen 24-uurs timer. Besluit over Wyoming: `docs/adr/0001-tts-stays-in-the-integration.md`.
+**Notes:** the fetch (`_async_fetch_voices`, paginated) runs at startup and on button press. Preset slugs such as `en_paul_neutral` work as `voice_id` (verified with `tts.speak`). No free input and no 24h timer. Decision on not moving TTS to a Wyoming server: `docs/adr/0001-tts-stays-in-the-integration.md`.
 
-**Schatting:** Claude 30 min + test 15 min · ≈ 0,5–1,5 M tokens
+**Estimate:** Claude 30 min + test 15 min · ≈ 0.5–1.5 M tokens
 
 ---
 
