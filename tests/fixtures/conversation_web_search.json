@@ -1,0 +1,6 @@
+{"conversation_id": "conv_fixture", "outputs": [
+  {"type": "tool.execution", "name": "web_search"},
+  {"type": "message.output", "role": "assistant", "content": [
+    {"type": "text", "text": "Morgen wordt het 18 graden en zonnig in Amsterdam."}
+  ]}
+]}

@@ -37,3 +37,8 @@ jobs:
         run: ruff check .
       - name: Pytest
         run: pytest tests
+      - name: Coverage gates
+        if: matrix.latest
+        run: |
+          pytest --cov --cov-report=term-missing --cov-fail-under=90
+          coverage report --include="*/config_flow.py" --fail-under=100
