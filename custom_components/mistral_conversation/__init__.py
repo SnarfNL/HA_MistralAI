@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -18,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-PLATFORMS = ["ai_task", "conversation", "stt", "tts"]
+PLATFORMS = ["ai_task", "button", "conversation", "stt", "tts"]
 
 
 @dataclass
@@ -29,6 +30,9 @@ class MistralRuntimeData:
     headers: dict[str, str]
     # Cached Mistral Agent ID for web-search conversations
     web_search_agent_id: str | None = field(default=None)
+    # The TTS entity, registered while it is loaded so the refresh-voices
+    # button can reach it.
+    tts_entity: Any | None = field(default=None)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

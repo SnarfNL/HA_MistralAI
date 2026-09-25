@@ -143,7 +143,6 @@ Click the integration → **Configure** to change settings.
 | **Web search** | Off | Allow the AI to search the web (Beta) |
 | **Web search routing** | `Let the model decide` | How web search is triggered — see below |
 | **Web search trigger phrases** | *(empty)* | Optional phrases that force a web search — see below |
-| **STT language** | Auto-detect | Language for Voxtral transcription |
 | **TTS mode** | `Streaming` | `Streaming` (SSE WAV with sentence-level pipelining) or `Batch` (single MP3 request) |
 ### Available models
 
@@ -303,12 +302,12 @@ A `stt.mistral_ai_stt_voxtral` entity is registered automatically.
 |---|---|
 | Model | `voxtral-mini-latest` |
 | Supported format | WAV (16-bit, 16 kHz, mono PCM) |
-| Languages | 60+ with auto-detect |
+| Languages | 13: Arabic, Chinese, Dutch, English, French, German, Hindi, Italian, Japanese, Korean, Portuguese, Russian, Spanish (auto-detect when none is chosen) |
 | Pricing | ~$0.003 per minute |
 
 ### Setting STT language
 
-In the options, select a language from the dropdown for best accuracy, or leave it on **Auto-detect**.
+Choose the language in **Settings → Voice assistants** (Speech-to-text language) for best accuracy. If none is chosen, Voxtral detects the language automatically.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -337,12 +336,18 @@ Selectable via **Settings → Devices & Services → Mistral AI Conversation →
 | Model | `voxtral-mini-tts-2603` |
 | Stream container | WAV (24 kHz, 16-bit, mono PCM) |
 | Batch container | MP3 (base64-wrapped JSON response) |
-| Voices | EN-US (Paul), GB (Jane, Oliver), FR (Marie) — emotion variants |
+| Languages | 9: Arabic, Dutch, English, French, German, Hindi, Italian, Portuguese, Spanish |
+| Voices | The voices of your Mistral account: the presets (Paul, Jane, Oliver, Marie, each with emotion variants) and any custom voices you make in Mistral Studio |
 
 ### Selecting a voice
 
-In **Settings → Devices & Services → Mistral AI Conversation → Configure**, choose from the available voices.
-The available voices are retrieved dynamically. Currently there are only voices for EN, GB and FR available. 
+Choose the voice in **Settings → Voice assistants** (Text-to-speech voice), or pass `voice` in a `tts.speak` call. Without a voice, `en_paul_neutral` is used. The integration options have no voice setting.
+
+The picker lists the voices of your Mistral account, including custom voices from Mistral Studio. After you create a new voice, press the **Refresh voices** button on the **Mistral AI TTS** device (Settings → Devices & services → Mistral AI → Mistral AI TTS) and it appears in the picker without restarting Home Assistant. If the list is empty, Home Assistant could not reach Mistral when it loaded; check the log and press the button again.
+
+### Languages and accents
+
+The 9 languages are the ones the model knows the words of. The preset voices speak all of them, but with their own accent (for example, Dutch text read by `Paul – Neutral (English)` has an English accent). For a native accent, create a custom voice in Mistral Studio, or use another TTS provider in your voice assistant. 
 
 <p align=right>(<a href=#readme-top>back to top</a>)</p>
 ---

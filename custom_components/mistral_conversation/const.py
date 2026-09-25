@@ -13,7 +13,6 @@ CONF_CONTINUE_CONVERSATION = "continue_conversation"
 CONF_WEB_SEARCH = "web_search"
 CONF_WEB_SEARCH_MODE = "web_search_mode"
 CONF_WEB_SEARCH_TRIGGER = "web_search_trigger"
-CONF_STT_LANGUAGE = "stt_language"
 CONF_TTS_MODE = "tts_mode"
 # Note: device control uses HA's native CONF_LLM_HASS_API from homeassistant.const
 
@@ -53,7 +52,6 @@ DEFAULT_WEB_SEARCH_MODE = WEB_SEARCH_MODE_MODEL
 # default) leaves routing to `web_search_mode`. Opt-in by design — trigger
 # phrases are language-specific, so shipping a list would only fit some users.
 DEFAULT_WEB_SEARCH_TRIGGER = ""
-DEFAULT_STT_LANGUAGE = ""  # empty = Voxtral auto-detect
 DEFAULT_TTS_VOICE = "en_paul_neutral"
 DEFAULT_TTS_MODE = TTS_MODE_STREAM
 
@@ -120,38 +118,11 @@ STT_MODEL = "voxtral-mini-latest"
 # ---------------------------------------------------------------------------
 TTS_MODEL = "voxtral-mini-tts-2603"
 
-# Available voices per Mistral TTS documentation (voxtral-mini-tts-2603)
-TTS_VOICES = [
-    "en_paul_angry",
-    "en_paul_cheerful",
-    "en_paul_confident",
-    "en_paul_excited",
-    "en_paul_frustrated",
-    "en_paul_happy",
-    "en_paul_neutral",
-    "en_paul_sad",
-    "fr_marie_angry",
-    "fr_marie_curious",
-    "fr_marie_excited",
-    "fr_marie_happy",
-    "fr_marie_neutral",
-    "fr_marie_sad",
-    "gb_jane_confused",
-    "gb_jane_curious",
-    "gb_jane_frustrated",
-    "gb_jane_jealousy",
-    "gb_jane_neutral",
-    "gb_jane_sad",
-    "gb_jane_sarcasm",
-    "gb_jane_shameful",
-    "gb_oliver_angry",
-    "gb_oliver_cheerful",
-    "gb_oliver_confident",
-    "gb_oliver_curious",
-    "gb_oliver_excited",
-    "gb_oliver_neutral",
-    "gb_oliver_sad",
-]
+# Languages Voxtral TTS supports, per the Mistral docs. This is about the words
+# the model knows, not about accents: the preset voices speak every one of these
+# languages, but with their own accent. The voices themselves come from the
+# account (see _voices.py and MistralTTSEntity.async_refresh_voices).
+TTS_LANGUAGES = ["en", "fr", "es", "pt", "it", "nl", "de", "hi", "ar"]
 
 # --- Streaming ----------------------------------------------------------
 # Cap on concurrently in-flight Mistral TTS requests (one per sentence).

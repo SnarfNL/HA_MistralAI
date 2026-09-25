@@ -33,9 +33,6 @@ class DefaultsConsistencyTests(unittest.TestCase):
     def test_default_model_in_chat_models(self) -> None:
         self.assertIn(C.DEFAULT_MODEL, C.CHAT_MODELS)
 
-    def test_default_tts_voice_in_tts_voices(self) -> None:
-        self.assertIn(C.DEFAULT_TTS_VOICE, C.TTS_VOICES)
-
     def test_default_tts_mode_in_tts_modes(self) -> None:
         self.assertIn(C.DEFAULT_TTS_MODE, C.TTS_MODES)
 
@@ -51,21 +48,20 @@ class DefaultsConsistencyTests(unittest.TestCase):
 
 
 class TtsConfigurationTests(unittest.TestCase):
-    """Voice list and streaming tunables must be sensibly populated."""
+    """Language list and streaming tunables must be sensibly populated."""
 
-    def test_tts_voices_non_empty(self) -> None:
-        self.assertGreater(len(C.TTS_VOICES), 0)
+    def test_tts_languages_are_the_nine_documented_ones(self) -> None:
+        self.assertSetEqual(
+            set(C.TTS_LANGUAGES),
+            {"en", "fr", "es", "pt", "it", "nl", "de", "hi", "ar"},
+        )
 
-    def test_tts_voices_unique(self) -> None:
-        self.assertEqual(len(C.TTS_VOICES), len(set(C.TTS_VOICES)))
+    def test_tts_languages_unique(self) -> None:
+        self.assertEqual(len(C.TTS_LANGUAGES), len(set(C.TTS_LANGUAGES)))
 
-    def test_voice_naming_convention(self) -> None:
-        """Voice IDs follow ``<lang>_<name>_<emotion>`` (3+ tokens, 2+ underscores)."""
-        for voice in C.TTS_VOICES:
-            self.assertGreaterEqual(
-                voice.count("_"), 2,
-                f"voice {voice!r} doesn't follow lang_name_emotion convention",
-            )
+    def test_default_tts_voice_is_a_preset_slug(self) -> None:
+        """The built-in default is a ``<lang>_<name>_<emotion>`` preset slug."""
+        self.assertGreaterEqual(C.DEFAULT_TTS_VOICE.count("_"), 2)
 
     def test_max_inflight_positive(self) -> None:
         self.assertGreater(C.TTS_MAX_INFLIGHT_SENTENCES, 0)

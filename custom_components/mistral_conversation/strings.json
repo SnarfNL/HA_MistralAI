@@ -41,7 +41,6 @@
           "web_search": "Enable web search (Beta)",
           "web_search_mode": "Web search routing",
           "web_search_trigger": "Web search trigger phrases (optional)",
-          "stt_language": "Speech recognition language (STT)",
           "tts_mode": "Text-to-speech mode"
         },
         "data_description": {
@@ -54,7 +53,6 @@
           "web_search": "When enabled, the AI can search the web for up-to-date information. Uses Mistral's Agents API (beta). Requires a model that supports agents (mistral-small-latest, mistral-medium-latest or mistral-large-latest). See 'Web search routing' below — the 'Always search' option sends every request through the slower Agents API and disables device control for those turns.",
           "web_search_mode": "'Let the model decide' (recommended): the AI searches only when it decides it needs to, and can still control your devices in the same turn. 'Always search': every request goes through the Agents API — slower, and device control does not work on those turns.",
           "web_search_trigger": "Optional. Comma-separated phrases, for example 'search for, look up, google'. When set, these take precedence over the routing mode: only commands starting with one of these phrases search the web (the phrase itself is removed from the query), and all other commands never search. Leave empty to let the routing mode decide.",
-          "stt_language": "Language for Voxtral speech-to-text. Select 'Auto-detect' to let Voxtral determine the language automatically.",
           "tts_mode": "Stream: low-latency SSE WAV with sentence-level pipelining. Batch: single mp3 request, higher latency but smaller responses cache well. The tts.speak service always uses batch."
         }
       }
@@ -82,6 +80,18 @@
         "mistral-medium-latest": "Mistral Medium — needed for web search; ⚠️ paid tier, often rate-limited on free API keys",
         "mistral-large-latest": "Mistral Large — most capable; ⚠️ paid tier, often rate-limited on free API keys"
       }
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh_voices": {
+        "name": "Refresh voices"
+      }
+    }
+  },
+  "exceptions": {
+    "voices_refresh_failed": {
+      "message": "Could not refresh the voices. Check the Home Assistant log for details."
     }
   }
 }

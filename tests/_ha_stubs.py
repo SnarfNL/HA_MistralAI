@@ -53,6 +53,7 @@ _PATHS = [
     "aiohttp", "voluptuous", "voluptuous_openapi",
     "homeassistant", "homeassistant.components",
     "homeassistant.components.ai_task",
+    "homeassistant.components.button",
     "homeassistant.components.conversation",
     "homeassistant.components.stt",
     "homeassistant.components.tts",
@@ -74,6 +75,9 @@ for _p in _PATHS:
 # Real types for subclassed names + isinstance() targets
 # ---------------------------------------------------------------------------
 
+# `except aiohttp.ClientError` needs a real exception class.
+sys.modules["aiohttp"].ClientError = _exception_class("ClientError")
+
 _conv = sys.modules["homeassistant.components.conversation"]
 for _n in (
     "ConversationEntity", "ConversationEntityFeature",
@@ -94,9 +98,24 @@ for _n in (
 _tts = sys.modules["homeassistant.components.tts"]
 for _n in (
     "TextToSpeechEntity", "TTSAudioRequest", "TTSAudioResponse",
-    "TtsAudioType", "Voice",
+    "TtsAudioType",
 ):
     setattr(_tts, _n, _empty_class(_n))
+
+
+class _Voice:
+    """Stand-in for ``tts.Voice`` (a dataclass with voice_id and name)."""
+
+    def __init__(self, voice_id: str, name: str) -> None:
+        self.voice_id = voice_id
+        self.name = name
+
+
+_tts.Voice = _Voice
+
+sys.modules["homeassistant.components.button"].ButtonEntity = _empty_class(
+    "ButtonEntity"
+)
 
 # AITaskEntity is subclassed (MistralAITaskEntity(AITaskEntity)) so it must
 # be a real type. AITaskEntityFeature/GenDataTask/GenDataTaskResult are only
@@ -114,7 +133,25 @@ _cfg.ConfigEntry = _empty_class("ConfigEntry")
 sys.modules["homeassistant.core"].HomeAssistant = _empty_class("HomeAssistant")
 
 _exc = sys.modules["homeassistant.exceptions"]
-_exc.HomeAssistantError = _exception_class("HomeAssistantError")
+
+
+class _HomeAssistantError(Exception):
+    """Accepts the translation kwargs the real HomeAssistantError takes."""
+
+    def __init__(
+        self,
+        *args: Any,
+        translation_domain: str | None = None,
+        translation_key: str | None = None,
+        translation_placeholders: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(*args)
+        self.translation_domain = translation_domain
+        self.translation_key = translation_key
+        self.translation_placeholders = translation_placeholders
+
+
+_exc.HomeAssistantError = _HomeAssistantError
 _exc.ConfigEntryAuthFailed = _exception_class("ConfigEntryAuthFailed")
 _exc.ConfigEntryNotReady = _exception_class("ConfigEntryNotReady")
 
