@@ -1,0 +1,6 @@
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+# Minimal setup: ruff's default rules (pyflakes + a few pycodestyle errors).
+# Stricter rules can be added later under [tool.ruff.lint].

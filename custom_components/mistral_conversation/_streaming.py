@@ -9,8 +9,8 @@ from __future__ import annotations
 import base64
 import json
 import re
-from typing import Any, AsyncGenerator, Protocol
-
+from collections.abc import AsyncGenerator
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Sentence segmentation
@@ -93,21 +93,9 @@ def pop_complete_sentences(
 # ---------------------------------------------------------------------------
 
 
-class _AsyncByteStream(Protocol):
-    """Minimal protocol matching aiohttp.StreamReader.iter_any()."""
-
-    def iter_any(self) -> AsyncGenerator[bytes, None]: ...
-
-
-class _AsyncResponse(Protocol):
-    """Minimal protocol matching aiohttp.ClientResponse for our needs."""
-
-    content: _AsyncByteStream
-
-
 async def iter_sse_audio_chunks(
     resp: Any,
-) -> AsyncGenerator[bytes, None]:
+) -> AsyncGenerator[bytes]:
     """Yield decoded audio bytes from a Mistral TTS SSE response.
 
     *resp* must expose ``.content.iter_any()`` returning an async iterator of

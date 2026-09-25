@@ -26,7 +26,8 @@ import asyncio
 import base64
 import logging
 import time
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import aiohttp
 from homeassistant.components.tts import (
@@ -338,9 +339,9 @@ class MistralTTSEntity(TextToSpeechEntity):
     # ------------------------------------------------------------------
     async def _pipelined_stream(
         self,
-        message_gen: AsyncGenerator[str, None],
+        message_gen: AsyncGenerator[str],
         voice: str,
-    ) -> AsyncGenerator[bytes, None]:
+    ) -> AsyncGenerator[bytes]:
         """Aggressive sentence-pipelined TTS generator.
 
         Architecture::
@@ -393,7 +394,7 @@ class MistralTTSEntity(TextToSpeechEntity):
                         _LOGGER.debug("TTS sentence %d DONE", idx)
                 except asyncio.CancelledError:
                     raise
-                except Exception as err:  # pylint: disable=broad-except
+                except Exception as err:  # noqa: BLE001 - forward any per-sentence failure to the consumer instead of crashing the pipeline
                     _LOGGER.warning("TTS sentence %d failed: %s", idx, err)
                     await inner.put(err)
                 finally:
@@ -472,7 +473,7 @@ class MistralTTSEntity(TextToSpeechEntity):
                 await producer_task
             except asyncio.CancelledError:
                 pass
-            except Exception as err:  # pylint: disable=broad-except
+            except Exception as err:  # noqa: BLE001 - already-cancelled cleanup path; swallow and log, don't propagate
                 _LOGGER.debug("TTS producer ended with error: %s", err)
             for task in fetch_tasks:
                 if not task.done():

@@ -4,17 +4,19 @@ Covered: ``_sanitize`` (recursive JSON-safe coercion), ``_to_mistral_id``
 (stable 9-char hex ID), and ``_async_stream_delta`` (SSE parser for
 chat-completions streaming responses).
 """
+# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
+# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
-import asyncio
 import json
 import unittest
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import patch
 
 from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
 
-from mistral_conversation.conversation import (  # noqa: E402
+from mistral_conversation.conversation import (
     _async_stream_delta,
     _format_tool,
     _sanitize,
@@ -201,7 +203,7 @@ class _FakeResponse:
 
 
 def _data_frame(payload: dict[str, Any]) -> bytes:
-    return f"data: {json.dumps(payload)}\n\n".encode("utf-8")
+    return f"data: {json.dumps(payload)}\n\n".encode()
 
 
 def _content_delta(text: str) -> dict[str, Any]:

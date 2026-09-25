@@ -40,7 +40,6 @@ from .const import (
     TTS_VOICES,
     WEB_SEARCH_MODES,
 )
-from .stt import LANGUAGE_OPTIONS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -142,7 +141,7 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> "MistralOptionsFlow":
+    ) -> MistralOptionsFlow:
         return MistralOptionsFlow()
 
 

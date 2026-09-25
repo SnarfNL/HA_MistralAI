@@ -2,6 +2,8 @@
 
 Loads ``stt.py`` via the integration package, with HA stubs installed first.
 """
+# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
+# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import struct
@@ -9,7 +11,7 @@ import unittest
 
 from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
 
-from mistral_conversation.stt import LANGUAGE_OPTIONS, _pcm_to_wav  # noqa: E402
+from mistral_conversation.stt import LANGUAGE_OPTIONS, _pcm_to_wav
 
 
 class PcmToWavTests(unittest.TestCase):
