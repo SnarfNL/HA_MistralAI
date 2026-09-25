@@ -58,3 +58,7 @@ Write it in Dutch, with: the problem, what changed (plain language, no jargon), 
 - STT language comes from `metadata.language` (the voice pipeline), not from an integration option.
 - `GET /v1/audio/voices` is paginated (`limit`/`offset`); synthesis uses the voice `id` (UUID), the picker shows `name`.
 - Streaming TTS is WAV 24 kHz / 16-bit / mono; per-sentence requests are stitched into one stream (one RIFF header, then raw PCM).
+
+## Planning and vocabulary
+- Backlog: GitHub Issues with label `backlog` (source: docs/backlog.md). Reference the issue in every PR (`Closes #N`).
+- Vocabulary: CONTEXT.md. Background: docs/review/2026-09-review.md.
