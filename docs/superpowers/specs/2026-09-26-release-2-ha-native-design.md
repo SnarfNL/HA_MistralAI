@@ -66,7 +66,7 @@ Each step is one or more commits whose message names the story, so the PR can be
 `MistralClient(hass, entry, session, api_key)`:
 - `request(method, path, *, timeout, ...)`: the current `mistral_request` logic (retries, reauth, translated errors) as an async context manager. Paths are relative to `MISTRAL_API_BASE`.
 - Thin methods on top of `request`: `chat_stream(payload)`, `start_conversation(payload)` / `append_conversation(conv_id, payload)`, `delete_conversation(conv_id)`, `speech(payload, *, stream)`, `transcribe(form_factory, ...)`, `list_voices(offset, limit)`, `list_models()`.
-- Every translated error is also recorded in the runtime's error log (MA-14).
+- Every error raised while sending a request (network, timeout, 401, 429, other HTTP errors) is also recorded in the runtime's error log (MA-14). Errors from reading a response or from the caller's own code are not recorded.
 - `static async validate_key(session, api_key) -> None | "invalid_auth" | "cannot_connect"` (the config flow keeps its current `unknown` fallback for unexpected exceptions): used by setup, the config flow, reauth and reconfigure. This removes the two direct session calls CLAUDE.md now lists as exceptions.
 
 **Runtime data:** `type MistralConfigEntry = ConfigEntry[MistralRuntimeData]`; `entry.runtime_data` replaces all 9 uses of `hass.data[DOMAIN]`. `MistralRuntimeData` holds `client`, `web_search_convs`, `tts_entity`, `errors` (a `deque(maxlen=10)`) and `models` (the last `/v1/models` result, for MA-14).
