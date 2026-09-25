@@ -3,22 +3,20 @@ the config flow and STT (MA-03).
 
 No real Home Assistant and no network: sessions are fakes that raise.
 """
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 import aiohttp
-import mistral_conversation as init_module
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
-from mistral_conversation import ai_task as ai_task_module
-from mistral_conversation import config_flow as config_flow_module
-from mistral_conversation import stt as stt_module
-from mistral_conversation.const import DOMAIN
+
+import custom_components.mistral_conversation as init_module
+from custom_components.mistral_conversation import ai_task as ai_task_module
+from custom_components.mistral_conversation import config_flow as config_flow_module
+from custom_components.mistral_conversation import stt as stt_module
+from custom_components.mistral_conversation.const import DOMAIN
 
 
 class _Invalid(Exception):

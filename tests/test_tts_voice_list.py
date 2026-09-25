@@ -3,7 +3,6 @@
 No real Home Assistant and no network: the HTTP session is a fake that serves
 canned pages of ``GET /v1/audio/voices``.
 """
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import json
@@ -12,13 +11,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import aiohttp
-
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 from homeassistant.exceptions import HomeAssistantError
-from mistral_conversation import button as button_module
-from mistral_conversation import tts as tts_module
-from mistral_conversation.const import DOMAIN, TTS_LANGUAGES
+
+from custom_components.mistral_conversation import button as button_module
+from custom_components.mistral_conversation import tts as tts_module
+from custom_components.mistral_conversation.const import DOMAIN, TTS_LANGUAGES
 
 COMPONENT = Path(__file__).resolve().parent.parent / "custom_components" / "mistral_conversation"
 

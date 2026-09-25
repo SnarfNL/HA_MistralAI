@@ -15,18 +15,22 @@ custom_components/mistral_conversation/
   config_flow.py   config flow, reauth, options flow
   const.py         config keys, defaults, model and voice lists
   strings.json + translations/{en,nl,fr}.json
-tests/             unittest-style tests; HA is stubbed via tests/_ha_stubs.py
+tests/             pytest on real HA (pytest-homeassistant-custom-component); API mocked with aioclient_mock + tests/fixtures
 ```
 
 ## Commands
 
 ```bash
-pip install ruff pytest
+pip install -r requirements_test.txt
+python scripts/component_requirements.py > requirements_components.txt
+pip install -r requirements_components.txt
 ruff check .        # must pass
-pytest tests        # must pass
+pytest              # must pass; add --cov for the coverage gates
+mypy                # must pass
 ```
 
-CI (GitHub Actions) runs hassfest, HACS validation, ruff and pytest on every PR.
+HA's test runner needs Linux or macOS; on Windows the tests run in CI.
+CI (GitHub Actions) runs hassfest, HACS validation, ruff, mypy and pytest on every PR, against the minimum (2025.10) and the latest HA version.
 
 ## Workflow rules
 

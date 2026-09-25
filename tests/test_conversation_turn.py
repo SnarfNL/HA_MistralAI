@@ -4,19 +4,17 @@ web-search answer landing in the chat log (MA-02).
 No real Home Assistant and no network: the chat log is a small fake that
 records the deltas it receives, and the Mistral calls are patched.
 """
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import unittest
 from types import MappingProxyType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 from homeassistant.exceptions import HomeAssistantError
-from mistral_conversation import conversation as conv_module
-from mistral_conversation._api import mistral_error
-from mistral_conversation.const import (
+
+from custom_components.mistral_conversation import conversation as conv_module
+from custom_components.mistral_conversation._api import mistral_error
+from custom_components.mistral_conversation.const import (
     CONF_MODEL,
     CONF_WEB_SEARCH,
     CONF_WEB_SEARCH_MODE,

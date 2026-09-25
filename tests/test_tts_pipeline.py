@@ -8,8 +8,6 @@ header of the first sentence that really delivers audio, exactly once.
 No real Home Assistant and no network: the per-sentence HTTP call is replaced
 by a fake that writes a real 44-byte WAV header plus recognisable PCM bytes.
 """
-# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
-# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import asyncio
@@ -18,11 +16,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 from homeassistant.exceptions import HomeAssistantError
-from mistral_conversation import tts as tts_module
-from mistral_conversation.const import (
+
+from custom_components.mistral_conversation import tts as tts_module
+from custom_components.mistral_conversation.const import (
     DOMAIN,
     TTS_INTER_SENTENCE_SILENCE_BYTES,
     TTS_WAV_HEADER_SIZE,

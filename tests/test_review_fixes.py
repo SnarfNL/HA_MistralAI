@@ -6,7 +6,6 @@ conversation cleanup going through the shared request helper.
 
 No real Home Assistant and no network.
 """
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import logging
@@ -14,16 +13,15 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 import aiohttp
-import mistral_conversation as init_module
 from homeassistant.exceptions import ConfigEntryNotReady
-from mistral_conversation import _api
-from mistral_conversation import conversation as conv_module
-from mistral_conversation import stt as stt_module
-from mistral_conversation import tts as tts_module
-from mistral_conversation.const import DOMAIN
+
+import custom_components.mistral_conversation as init_module
+from custom_components.mistral_conversation import _api
+from custom_components.mistral_conversation import conversation as conv_module
+from custom_components.mistral_conversation import stt as stt_module
+from custom_components.mistral_conversation import tts as tts_module
+from custom_components.mistral_conversation.const import DOMAIN
 
 API_KEY = "sk-secret-key"
 
