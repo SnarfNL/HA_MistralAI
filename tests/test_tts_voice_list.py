@@ -17,7 +17,7 @@ from custom_components.mistral_conversation import button as button_module
 from custom_components.mistral_conversation import tts as tts_module
 from custom_components.mistral_conversation.const import TTS_LANGUAGES
 
-from .helpers import attach_runtime
+from .helpers import attach_runtime, with_hass
 
 COMPONENT = Path(__file__).resolve().parent.parent / "custom_components" / "mistral_conversation"
 
@@ -70,7 +70,7 @@ CUSTOM = {"id": "id-mine", "name": "My Voice"}
 def _make_entity(session) -> tts_module.MistralTTSEntity:
     entry = SimpleNamespace(entry_id="entry1", options={})
     attach_runtime(entry, session)
-    return tts_module.MistralTTSEntity(SimpleNamespace(data={}), entry)
+    return with_hass(tts_module.MistralTTSEntity(entry), SimpleNamespace(data={}))
 
 
 def _ids(entity) -> list[str]:
@@ -132,7 +132,7 @@ class RefreshButtonTests(unittest.IsolatedAsyncioTestCase):
         entry = SimpleNamespace(
             entry_id="entry1", runtime_data=SimpleNamespace(tts_entity=tts_entity)
         )
-        return button_module.MistralRefreshVoicesButton(SimpleNamespace(data={}), entry)
+        return with_hass(button_module.MistralRefreshVoicesButton(entry), SimpleNamespace(data={}))
 
     async def test_press_refreshes_the_tts_voices(self) -> None:
         entity = _make_entity(_Session(_page([CUSTOM])))

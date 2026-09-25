@@ -31,7 +31,9 @@ _PRESET_SLUG = re.compile(r"^([a-z]{2})_([a-z]+)_([a-z]+)$")
 def _parse_preset(name: str) -> tuple[str, str, str] | None:
     """Return (language, speaker, emotion) for a preset slug, else None."""
     match = _PRESET_SLUG.match(name)
-    return match.groups() if match else None
+    if not match:
+        return None
+    return match.group(1), match.group(2), match.group(3)
 
 
 def voice_label(name: str) -> str:

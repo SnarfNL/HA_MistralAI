@@ -14,7 +14,6 @@ asyncio_default_fixture_loop_scope = "function"
 source = ["custom_components.mistral_conversation"]
 
 [tool.mypy]
-python_version = "3.13"
 ignore_missing_imports = true
 check_untyped_defs = true
 files = ["custom_components/mistral_conversation"]

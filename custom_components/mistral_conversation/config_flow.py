@@ -7,7 +7,6 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import llm, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -45,7 +44,7 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -79,13 +78,13 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth(
         self, entry_data: dict[str, Any]
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle reauth when API key becomes invalid."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Dialog to re-enter the API key."""
         errors: dict[str, str] = {}
 
@@ -135,7 +134,7 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         if user_input is not None:
             # Clean up empty LLM API selection
             if not user_input.get(CONF_LLM_HASS_API):

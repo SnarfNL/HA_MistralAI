@@ -43,12 +43,11 @@ from homeassistant.components.tts import (
     TtsAudioType,
     Voice,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import MistralConfigEntry
 from ._streaming import (
     has_speakable_content,
     iter_sse_audio_chunks,
@@ -65,7 +64,6 @@ from .const import (
     CONF_TTS_MODE,
     DEFAULT_TTS_MODE,
     DEFAULT_TTS_VOICE,
-    DOMAIN,
     TTS_INTER_SENTENCE_SILENCE_BYTES,
     TTS_LANGUAGES,
     TTS_MAX_INFLIGHT_SENTENCES,
@@ -74,8 +72,12 @@ from .const import (
     TTS_MODEL,
     TTS_WAV_HEADER_SIZE,
 )
+from .entity import TTS_DEVICE, MistralEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# Cloud service: nothing polls, calls may run in parallel.
+PARALLEL_UPDATES = 0
 
 # Pre-computed once at import. ``bytes(N)`` materialises N zero bytes — valid
 # PCM silence at any sample rate / channel count. Yielded between sentences
@@ -111,11 +113,11 @@ def _silence_for_header(header: bytes) -> bytes:
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: MistralConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Mistral AI TTS entity."""
-    async_add_entities([MistralTTSEntity(hass, config_entry)])
+    async_add_entities([MistralTTSEntity(config_entry)])
 
 
 # ---------------------------------------------------------------------------
@@ -123,19 +125,7 @@ async def async_setup_entry(
 # ---------------------------------------------------------------------------
 
 
-def tts_device_info(entry: ConfigEntry) -> DeviceInfo:
-    """Device shared by the TTS entity and its refresh button."""
-    return DeviceInfo(
-        identifiers={(DOMAIN, f"{entry.entry_id}_tts")},
-        name="Mistral AI TTS",
-        manufacturer="Mistral AI",
-        model=TTS_MODEL,
-        entry_type=DeviceEntryType.SERVICE,
-        configuration_url="https://docs.mistral.ai/capabilities/audio_generation",
-    )
-
-
-class MistralTTSEntity(TextToSpeechEntity):
+class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
     """Mistral AI text-to-speech entity.
 
     Voice selection priority (highest to lowest):
@@ -146,13 +136,11 @@ class MistralTTSEntity(TextToSpeechEntity):
          automation without an explicit voice option.
     """
 
-    _attr_has_entity_name = True
+    _device = TTS_DEVICE
     _attr_name = "Mistral AI TTS"
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        self.hass = hass
-        self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_tts"
+    def __init__(self, entry: MistralConfigEntry) -> None:
+        super().__init__(entry, "tts")
         # The account's voices, from GET /v1/audio/voices. None means "not
         # fetched yet"; the picker then shows no voices. There is no static
         # fallback: only voices that really exist on the account are offered.
@@ -193,14 +181,6 @@ class MistralTTSEntity(TextToSpeechEntity):
             return False
         self._voice_cache = voices
         return True
-
-    @property
-    def _runtime(self):
-        return self._entry.runtime_data
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return tts_device_info(self._entry)
 
     @property
     def default_language(self) -> str:

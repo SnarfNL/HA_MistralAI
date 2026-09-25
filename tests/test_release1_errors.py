@@ -17,7 +17,7 @@ from custom_components.mistral_conversation import ai_task as ai_task_module
 from custom_components.mistral_conversation import config_flow as config_flow_module
 from custom_components.mistral_conversation import stt as stt_module
 
-from .helpers import attach_runtime
+from .helpers import attach_runtime, with_hass
 
 
 class _Invalid(Exception):
@@ -101,7 +101,7 @@ class SttTimeoutTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(failure=repr(failure)):
                 entry = SimpleNamespace(entry_id="entry1")
                 attach_runtime(entry, _RaisingSession(failure))
-                entity = stt_module.MistralSTTEntity(SimpleNamespace(data={}), entry)
+                entity = with_hass(stt_module.MistralSTTEntity(entry), SimpleNamespace(data={}))
                 with (
                     patch.object(stt_module, "SpeechResult", lambda text, state: (text, state)),
                     patch.object(stt_module, "SpeechResultState", SimpleNamespace(ERROR="error")),

@@ -22,7 +22,7 @@ from custom_components.mistral_conversation.const import (
     WEB_SEARCH_MODE_ALWAYS,
 )
 
-from .helpers import attach_runtime
+from .helpers import attach_runtime, with_hass
 
 
 class _ChatLog:
@@ -64,7 +64,7 @@ def _entity(options: dict, session=None) -> conv_module.MistralConversationEntit
     hass = SimpleNamespace(data={})
     entry = SimpleNamespace(entry_id="entry1", options=options, async_start_reauth=MagicMock())
     attach_runtime(entry, session)
-    return conv_module.MistralConversationEntity(hass, entry)
+    return with_hass(conv_module.MistralConversationEntity(entry), hass)
 
 
 WEB_SEARCH_ALWAYS = {

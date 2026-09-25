@@ -22,7 +22,7 @@ from custom_components.mistral_conversation import conversation as conv_module
 from custom_components.mistral_conversation import stt as stt_module
 from custom_components.mistral_conversation import tts as tts_module
 
-from .helpers import attach_runtime
+from .helpers import attach_runtime, with_hass
 
 API_KEY = "sk-secret-key"
 
@@ -86,7 +86,7 @@ class SttRetryTests(unittest.IsolatedAsyncioTestCase):
 
         entry = SimpleNamespace(entry_id="entry1")
         attach_runtime(entry, SimpleNamespace(request=request))
-        entity = stt_module.MistralSTTEntity(SimpleNamespace(data={}), entry)
+        entity = with_hass(stt_module.MistralSTTEntity(entry), SimpleNamespace(data={}))
         metadata = SimpleNamespace(language="nl", sample_rate=16000, channel=1, bit_rate=16)
         with (
             patch.object(stt_module.aiohttp, "FormData", MagicMock(side_effect=lambda: MagicMock())),
@@ -108,7 +108,7 @@ class SttRetryTests(unittest.IsolatedAsyncioTestCase):
         attach_runtime(
             entry, SimpleNamespace(request=lambda *a, **k: _Response(200, {"text": None}))
         )
-        entity = stt_module.MistralSTTEntity(SimpleNamespace(data={}), entry)
+        entity = with_hass(stt_module.MistralSTTEntity(entry), SimpleNamespace(data={}))
         metadata = SimpleNamespace(language="nl", sample_rate=16000, channel=1, bit_rate=16)
         with (
             patch.object(stt_module, "SpeechResult", lambda text, state: (text, state)),
@@ -125,7 +125,7 @@ class VoiceFetchAtStartupTests(unittest.IsolatedAsyncioTestCase):
             entry_id="entry1", options={}, async_create_background_task=MagicMock()
         )
         runtime = attach_runtime(entry)
-        entity = tts_module.MistralTTSEntity(hass, entry)
+        entity = with_hass(tts_module.MistralTTSEntity(entry), hass)
         refresh = AsyncMock()
         with (
             patch.object(
@@ -147,7 +147,7 @@ class DeleteConversationTests(unittest.IsolatedAsyncioTestCase):
         hass = SimpleNamespace(data={})
         entry = SimpleNamespace(entry_id="entry1", options={}, async_start_reauth=MagicMock())
         attach_runtime(entry, SimpleNamespace(request=request))
-        return conv_module.MistralConversationEntity(hass, entry)
+        return with_hass(conv_module.MistralConversationEntity(entry), hass)
 
     async def test_delete_uses_the_shared_helper(self) -> None:
         calls: list = []

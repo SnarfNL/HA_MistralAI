@@ -35,6 +35,9 @@ jobs:
           python -m pip install -r requirements_components.txt
       - name: Ruff (lint)
         run: ruff check .
+      - name: Mypy
+        if: matrix.latest
+        run: mypy
       - name: Pytest
         run: pytest tests
       - name: Coverage gates

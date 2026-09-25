@@ -24,3 +24,9 @@ def attach_runtime(entry: Any, session: Any = None, **fields: Any) -> MistralRun
     )
     entry.runtime_data = runtime
     return runtime
+
+
+def with_hass(entity: Any, hass: Any) -> Any:
+    """Set ``entity.hass`` the way HA does when it adds the entity."""
+    entity.hass = hass
+    return entity

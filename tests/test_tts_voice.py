@@ -21,7 +21,7 @@ from custom_components.mistral_conversation import const
 from custom_components.mistral_conversation import tts as tts_module
 from custom_components.mistral_conversation.const import DEFAULT_TTS_VOICE
 
-from .helpers import attach_runtime
+from .helpers import attach_runtime, with_hass
 
 COMPONENT = Path(__file__).resolve().parent.parent / "custom_components" / "mistral_conversation"
 LEFTOVER_VOICE = "fr_marie_neutral"  # what an old config entry may still hold
@@ -56,7 +56,7 @@ class _FakeSession:
 def _make_entity(options=None, session=None) -> tts_module.MistralTTSEntity:
     entry = SimpleNamespace(entry_id="entry1", options=options or {})
     attach_runtime(entry, session)
-    return tts_module.MistralTTSEntity(SimpleNamespace(data={}), entry)
+    return with_hass(tts_module.MistralTTSEntity(entry), SimpleNamespace(data={}))
 
 
 class DefaultOptionsTests(unittest.TestCase):

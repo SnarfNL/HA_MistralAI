@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import Any, Literal
 
 import aiohttp
@@ -14,14 +14,13 @@ from homeassistant.components.conversation import (
     ConversationInput,
     ConversationResult,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import intent, llm
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import MistralConfigEntry
 from ._web_search import build_conversation_payload
 from .api import (
     async_spoken_error,
@@ -50,17 +49,21 @@ from .const import (
     WEB_SEARCH_MODE_ALWAYS,
     WEB_SEARCH_TOOL_NAME,
 )
+from .entity import CONVERSATION_DEVICE, MistralEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# Cloud service: nothing polls, calls may run in parallel.
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: MistralConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Mistral AI conversation entity."""
-    async_add_entities([MistralConversationEntity(hass, config_entry)])
+    async_add_entities([MistralConversationEntity(config_entry)])
 
 
 # ---------------------------------------------------------------------------
@@ -117,10 +120,15 @@ def _schema_to_openapi(
     empty_schema: dict[str, Any] = {"type": "object", "properties": {}}
 
     try:
+        convert: Callable[..., Any]
         try:
-            from probatio import to_openapi as convert
+            import probatio
+
+            convert = probatio.to_openapi
         except ImportError:
-            from voluptuous_openapi import convert
+            import voluptuous_openapi
+
+            convert = voluptuous_openapi.convert
         result = convert(schema, custom_serializer=custom_serializer)
     except Exception:  # noqa: BLE001 - schema conversion may fail in many ways; fall back to empty schema
         _LOGGER.debug("Could not serialize %s, using empty schema", log_context)
@@ -321,7 +329,7 @@ def _convert_chat_log_to_messages(
 
 async def _async_stream_delta(
     resp: aiohttp.ClientResponse,
-) -> AsyncGenerator[dict[str, Any]]:
+) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
     """Parse SSE stream from Mistral and yield delta dicts for HA's chat_log.
 
     Yields, in order:
@@ -339,7 +347,7 @@ async def _async_stream_delta(
     # Required first delta — see module-level note above.
     yield {"role": "assistant"}
 
-    async def _flush() -> AsyncGenerator[dict[str, Any]]:
+    async def _flush() -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
         """Yield each buffered tool call as its own dict and clear the buffer."""
         for tc in current_tool_calls.values():
             try:
@@ -407,10 +415,10 @@ async def _async_stream_delta(
 
 
 async def _filter_intercepted_tool(
-    stream: AsyncGenerator[dict[str, Any]],
+    stream: AsyncIterator[conversation.AssistantContentDeltaDict],
     tool_name: str,
     collected: list[str],
-) -> AsyncGenerator[dict[str, Any]]:
+) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
     """Strip calls to ``tool_name`` from a delta stream, collecting their queries.
 
     The named tool is one we service ourselves (web search via the Conversations API),
@@ -447,45 +455,32 @@ async def _filter_intercepted_tool(
 # Entity
 # ---------------------------------------------------------------------------
 
-async def _single_reply_stream(text: str) -> AsyncGenerator[dict[str, Any]]:
+async def _single_reply_stream(
+    text: str,
+) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
     """Delta stream for a reply that arrived in one piece (role first)."""
     yield {"role": "assistant"}
     yield {"content": text}
 
 
-class MistralConversationEntity(ConversationEntity):
+class MistralConversationEntity(MistralEntity, ConversationEntity):
     """Mistral AI conversation agent entity."""
 
-    _attr_has_entity_name = True
+    _device = CONVERSATION_DEVICE
     _attr_name = None
     _attr_supports_streaming = True
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        self.hass = hass
-        self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_conversation"
+    def __init__(self, entry: MistralConfigEntry) -> None:
+        super().__init__(entry, "conversation")
         if entry.options.get(CONF_LLM_HASS_API):
             self._attr_supported_features = ConversationEntityFeature.CONTROL
-
-    @property
-    def _runtime(self):
-        return self._entry.runtime_data
 
     @property
     def supported_languages(self) -> list[str] | Literal["*"]:
         return MATCH_ALL
 
-    @property
-    def device_info(self) -> DeviceInfo:
-        model = self._entry.options.get(CONF_MODEL, DEFAULT_MODEL)
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._entry.entry_id}_conversation")},
-            name="Mistral AI Conversation",
-            manufacturer="Mistral AI",
-            model=model,
-            entry_type=DeviceEntryType.SERVICE,
-            configuration_url="https://console.mistral.ai",
-        )
+    def _device_model(self) -> str:
+        return self._entry.options.get(CONF_MODEL, DEFAULT_MODEL)
 
     async def _async_handle_message(
         self,
@@ -738,7 +733,7 @@ class MistralConversationEntity(ConversationEntity):
         self._delete_mistral_conversations(convs.pop_expired())
 
         stateful = conv_id is not None
-        mistral_conv_id = convs.get(conv_id) if stateful else None
+        mistral_conv_id = convs.get(conv_id) if conv_id is not None else None
         if mistral_conv_id:
             request = runtime.client.append_conversation(
                 mistral_conv_id,
@@ -759,7 +754,7 @@ class MistralConversationEntity(ConversationEntity):
             data = await read_json(resp)
 
         new_conv_id = data.get("conversation_id") or data.get("id")
-        if stateful and new_conv_id:
+        if conv_id is not None and new_conv_id:
             self._delete_mistral_conversations(convs.set(conv_id, new_conv_id))
 
         parts: list[str] = []

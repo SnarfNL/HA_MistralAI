@@ -24,7 +24,7 @@ from custom_components.mistral_conversation.const import (
     TTS_WAV_HEADER_SIZE,
 )
 
-from .helpers import attach_runtime
+from .helpers import attach_runtime, with_hass
 
 
 def _wav_header(sample_rate: int = 24000, channels: int = 1, bits: int = 16) -> bytes:
@@ -61,7 +61,7 @@ async def _message_gen(*sentences: str):
 def _make_entity(session=None) -> tts_module.MistralTTSEntity:
     entry = SimpleNamespace(entry_id="entry1", options={})
     attach_runtime(entry, session)
-    return tts_module.MistralTTSEntity(SimpleNamespace(data={}), entry)
+    return with_hass(tts_module.MistralTTSEntity(entry), SimpleNamespace(data={}))
 
 
 def _fake_sentence(behaviour: dict[str, tuple]):
