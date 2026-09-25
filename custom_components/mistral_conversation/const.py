@@ -9,7 +9,6 @@ CONF_MODEL = "model"
 CONF_PROMPT = "prompt"
 CONF_MAX_TOKENS = "max_tokens"
 CONF_TEMPERATURE = "temperature"
-CONF_CONTINUE_CONVERSATION = "continue_conversation"
 CONF_WEB_SEARCH = "web_search"
 CONF_WEB_SEARCH_MODE = "web_search_mode"
 CONF_WEB_SEARCH_TRIGGER = "web_search_trigger"
@@ -45,7 +44,6 @@ WEB_SEARCH_TOOL_NAME = "web_search"
 DEFAULT_MODEL = "ministral-8b-latest"
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.7  # Mistral range: 0.0–1.0
-DEFAULT_CONTINUE_CONVERSATION = False
 DEFAULT_WEB_SEARCH = False
 DEFAULT_WEB_SEARCH_MODE = WEB_SEARCH_MODE_MODEL
 # Optional comma-separated trigger phrases. When non-empty they are LEADING:

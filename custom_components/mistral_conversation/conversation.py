@@ -24,7 +24,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     AGENT_CAPABLE_MODELS,
-    CONF_CONTINUE_CONVERSATION,
     CONF_MAX_TOKENS,
     CONF_MODEL,
     CONF_PROMPT,
@@ -32,7 +31,6 @@ from .const import (
     CONF_WEB_SEARCH,
     CONF_WEB_SEARCH_MODE,
     CONF_WEB_SEARCH_TRIGGER,
-    DEFAULT_CONTINUE_CONVERSATION,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_TEMPERATURE,
@@ -483,9 +481,6 @@ class MistralConversationEntity(ConversationEntity):
     ) -> ConversationResult:
         """Process a conversation turn using HA's ChatLog and LLM API."""
         opts = self._entry.options
-        continue_conversation_enabled = opts.get(
-            CONF_CONTINUE_CONVERSATION, DEFAULT_CONTINUE_CONVERSATION
-        )
 
         try:
             await chat_log.async_provide_llm_data(
@@ -571,13 +566,11 @@ class MistralConversationEntity(ConversationEntity):
                     ws_reply = None
 
                 if ws_reply:
-                    should_continue = continue_conversation_enabled and "?" in ws_reply
                     intent_response = intent.IntentResponse(language=user_input.language)
                     intent_response.async_set_speech(ws_reply)
                     return ConversationResult(
                         response=intent_response,
                         conversation_id=chat_log.conversation_id,
-                        continue_conversation=should_continue,
                     )
 
         # --- Standard path: chat completions with tool-call loop ---------
@@ -673,18 +666,9 @@ class MistralConversationEntity(ConversationEntity):
             if not chat_log.unresponded_tool_results:
                 break
 
-        result = conversation.async_get_result_from_chat_log(user_input, chat_log)
-
-        if continue_conversation_enabled:
-            reply_text = result.response.speech.get("plain", {}).get("speech", "")
-            if "?" in reply_text:
-                return ConversationResult(
-                    response=result.response,
-                    conversation_id=result.conversation_id,
-                    continue_conversation=True,
-                )
-
-        return result
+        # HA core decides continue_conversation from the chat log (reply ends in
+        # a question mark), so the result is returned unchanged.
+        return conversation.async_get_result_from_chat_log(user_input, chat_log)
 
     # ------------------------------------------------------------------
     # Agents / Conversations API for web search
