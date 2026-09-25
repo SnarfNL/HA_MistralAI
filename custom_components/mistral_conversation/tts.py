@@ -7,8 +7,12 @@ Two operating modes selectable via integration options (CONF_TTS_MODE):
   Events containing base64-encoded WAV chunks while synthesis is still in
   progress. For multi-sentence LLM responses, sentences are extracted from
   the incoming token stream and dispatched to Mistral with bounded
-  concurrency. Audio is reassembled in strict sentence order with the WAV
-  header from sentence 0 followed by raw PCM samples from sentences 1..N.
+  concurrency. Audio is reassembled in strict sentence order. Every sentence
+  worker strips its own WAV header and hands it over separately; the stream
+  starts with the header of the first sentence that actually delivers audio
+  (so a failing sentence 0 no longer leaves the stream without a header),
+  followed by raw PCM samples from all sentences. If no sentence delivers
+  audio, a HomeAssistantError is raised instead of returning an empty stream.
   The pipeline keeps up to TTS_MAX_INFLIGHT_SENTENCES Mistral requests in
   flight simultaneously while preserving playback order.
 
@@ -25,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import struct
 import time
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -70,6 +75,27 @@ _LOGGER = logging.getLogger(__name__)
 # PCM silence at any sample rate / channel count. Yielded between sentences
 # in the pipelined streaming engine to produce natural inter-sentence pauses.
 _INTER_SENTENCE_SILENCE: bytes = bytes(TTS_INTER_SENTENCE_SILENCE_BYTES)
+_INTER_SENTENCE_SILENCE_MS = 300
+
+
+def _silence_for_header(header: bytes) -> bytes:
+    """Return 300 ms of PCM silence matching the format in a WAV *header*.
+
+    Reads channels (offset 22), sample rate (offset 24) and bits per sample
+    (offset 34), all little-endian. If the header looks wrong, fall back to
+    the constant silence, which assumes Mistral's usual 24 kHz / 16-bit / mono.
+    """
+    try:
+        channels, sample_rate = struct.unpack_from("<HI", header, 22)
+        (bits,) = struct.unpack_from("<H", header, 34)
+    except struct.error:
+        return _INTER_SENTENCE_SILENCE
+    if not (1 <= channels <= 8 and 1 <= sample_rate <= 192_000):
+        return _INTER_SENTENCE_SILENCE
+    if bits < 8 or bits % 8:
+        return _INTER_SENTENCE_SILENCE
+    frame_bytes = channels * bits // 8
+    return bytes(sample_rate * _INTER_SENTENCE_SILENCE_MS // 1000 * frame_bytes)
 
 
 # ---------------------------------------------------------------------------
@@ -359,19 +385,25 @@ class MistralTTSEntity(TextToSpeechEntity):
           fetcher task per sentence, and pushes that sentence's inner audio
           queue onto the outer queue immediately (preserving order).
         * Each fetcher acquires a semaphore (bounding outbound concurrency),
-          POSTs to Mistral, parses SSE, decodes base64 audio, optionally
-          strips the WAV header for sentences after the first, and pushes
-          chunks into its (unbounded) inner queue.
+          POSTs to Mistral, parses SSE, decodes base64 audio, strips the
+          WAV header of *every* sentence and pushes it into its (unbounded)
+          inner queue as a separate ``("header", bytes)`` item before that
+          sentence's audio chunks.
         * Consumer (this method) drains inner queues in strict order. The
-          output is a single contiguous WAV stream: header from sentence 0,
-          PCM samples concatenated from sentences 0..N.
+          output is a single contiguous WAV stream: the header of the first
+          sentence that delivers audio (yielded exactly once, before any
+          audio; later headers are ignored), then the PCM samples of all
+          sentences. A brief silence, sized from that header, is inserted
+          only between sentences that really delivered audio. A failed
+          sentence is skipped; if no sentence delivers any audio, a
+          HomeAssistantError is raised.
         """
         sem = asyncio.Semaphore(TTS_MAX_INFLIGHT_SENTENCES)
         outer_q: asyncio.Queue[asyncio.Queue[Any] | None] = asyncio.Queue()
         fetch_tasks: list[asyncio.Task] = []
         end_marker = object()
 
-        async def fetch_sentence(idx: int, text: str, drop_header: bool) -> asyncio.Queue:
+        async def fetch_sentence(idx: int, text: str) -> asyncio.Queue:
             # Unbounded queue: avoids a cancellation-time deadlock where a
             # worker stuck on ``await inner.put(...)`` (queue at maxsize) can't
             # reach its finally block, leaving the consumer's ``gather`` to
@@ -385,12 +417,11 @@ class MistralTTSEntity(TextToSpeechEntity):
                 try:
                     async with sem:
                         _LOGGER.debug(
-                            "TTS sentence %d START (drop_header=%s, %d chars)",
+                            "TTS sentence %d START (%d chars)",
                             idx,
-                            drop_header,
                             len(text),
                         )
-                        await self._stream_one_sentence_into(text, voice, drop_header, inner, idx=idx)
+                        await self._stream_one_sentence_into(text, voice, inner, idx=idx)
                         _LOGGER.debug("TTS sentence %d DONE", idx)
                 except asyncio.CancelledError:
                     raise
@@ -413,7 +444,7 @@ class MistralTTSEntity(TextToSpeechEntity):
                     token_buffer += token
                     sentences, token_buffer = pop_complete_sentences(token_buffer, TTS_MIN_SENTENCE_CHARS)
                     for sentence in sentences:
-                        inner = await fetch_sentence(next_idx, sentence, drop_header=next_idx > 0)
+                        inner = await fetch_sentence(next_idx, sentence)
                         await outer_q.put(inner)
                         next_idx += 1
                 # Flush any trailing text without a terminator. Skip if it
@@ -424,7 +455,7 @@ class MistralTTSEntity(TextToSpeechEntity):
                 # this is the last chance to emit whatever's left.
                 trailing = token_buffer.strip()
                 if trailing and has_speakable_content(trailing):
-                    inner = await fetch_sentence(next_idx, trailing, drop_header=next_idx > 0)
+                    inner = await fetch_sentence(next_idx, trailing)
                     await outer_q.put(inner)
             finally:
                 await outer_q.put(None)
@@ -432,20 +463,22 @@ class MistralTTSEntity(TextToSpeechEntity):
         producer_task = asyncio.create_task(producer())
 
         try:
-            sentence_idx = 0
+            header_sent = False
+            silence = _INTER_SENTENCE_SILENCE
+            sentences_with_audio = 0
+            last_error: BaseException | None = None
             while True:
                 inner = await outer_q.get()
                 if inner is None:
+                    if not header_sent:
+                        detail = f" (last error: {last_error})" if last_error else ""
+                        raise HomeAssistantError(
+                            "Mistral TTS returned no audio for any sentence"
+                            f"{detail}. Check the voice ID and the Home Assistant log."
+                        )
                     return
-                # Inject a brief silence before every sentence after the
-                # first to give an audible pause at sentence boundaries.
-                # Without this, the back-to-back per-sentence Mistral calls
-                # concatenate with no gap — each call's audio ends at the
-                # last phoneme. Silence is plain zero PCM appended to the
-                # data subchunk (size = 0xFFFFFFFF, no length to update).
-                if sentence_idx > 0:
-                    yield _INTER_SENTENCE_SILENCE
-                sentence_idx += 1
+                sentence_header: bytes | None = None
+                sentence_has_audio = False
                 while True:
                     item = await inner.get()
                     if item is end_marker:
@@ -457,7 +490,30 @@ class MistralTTSEntity(TextToSpeechEntity):
                         # the response. The worker has already logged the
                         # specifics at WARNING level.
                         _LOGGER.warning("Skipping sentence due to error: %s", item)
+                        last_error = item
                         break
+                    if isinstance(item, tuple):
+                        # ("header", bytes): held back until this sentence
+                        # actually delivers audio.
+                        sentence_header = item[1]
+                        continue
+                    # Audio chunk. The very first audio of the whole stream
+                    # is preceded by that sentence's WAV header, exactly once.
+                    if not header_sent and sentence_header is not None:
+                        yield sentence_header
+                        header_sent = True
+                        silence = _silence_for_header(sentence_header)
+                    # A brief silence between sentences that really delivered
+                    # audio. Without it the back-to-back per-sentence Mistral
+                    # calls concatenate with no gap — each call's audio ends
+                    # at the last phoneme. Silence is plain zero PCM appended
+                    # to the data subchunk (size = 0xFFFFFFFF, no length to
+                    # update).
+                    if not sentence_has_audio:
+                        if sentences_with_audio > 0:
+                            yield silence
+                        sentence_has_audio = True
+                        sentences_with_audio += 1
                     yield item
         finally:
             # Cleanup. The CancelledError raised by ``await producer_task``
@@ -485,16 +541,15 @@ class MistralTTSEntity(TextToSpeechEntity):
         self,
         text: str,
         voice: str,
-        drop_header: bool,
         out_queue: asyncio.Queue,
         idx: int | None = None,
     ) -> None:
         """POST one sentence and pump SSE-decoded audio bytes into *out_queue*.
 
-        When *drop_header* is True, swallow the first TTS_WAV_HEADER_SIZE
-        decoded bytes regardless of how many SSE frames they span. This
-        produces a continuous PCM tail that concatenates cleanly behind
-        sentence 0's RIFF/WAVE header.
+        The first TTS_WAV_HEADER_SIZE decoded bytes (the RIFF/WAVE header,
+        possibly spread over several SSE frames) are collected and put into
+        *out_queue* as one ``("header", bytes)`` item, followed by the plain
+        PCM chunks. The consumer decides which sentence's header is used.
 
         *idx* is purely for log correlation with the surrounding START/DONE
         lines emitted by the worker; logic does not depend on it.
@@ -507,7 +562,8 @@ class MistralTTSEntity(TextToSpeechEntity):
             "response_format": "wav",
             "stream": True,
         }
-        bytes_skipped = 0
+        header_buf = b""
+        header_done = False
         request_start = time.monotonic()
         first_chunk_logged = False
         try:
@@ -543,10 +599,13 @@ class MistralTTSEntity(TextToSpeechEntity):
                             len(audio),
                         )
                         first_chunk_logged = True
-                    if drop_header and bytes_skipped < TTS_WAV_HEADER_SIZE:
-                        skip = min(TTS_WAV_HEADER_SIZE - bytes_skipped, len(audio))
-                        audio = audio[skip:]
-                        bytes_skipped += skip
+                    if not header_done:
+                        header_buf += audio
+                        if len(header_buf) < TTS_WAV_HEADER_SIZE:
+                            continue
+                        header_done = True
+                        await out_queue.put(("header", header_buf[:TTS_WAV_HEADER_SIZE]))
+                        audio = header_buf[TTS_WAV_HEADER_SIZE:]
                         if not audio:
                             continue
                     await out_queue.put(audio)
