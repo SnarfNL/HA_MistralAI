@@ -118,5 +118,18 @@
     "invalid_response": {
       "message": "Mistral returned an answer that could not be read."
     }
+  },
+  "issues": {
+    "model_retired": {
+      "title": "Mistral model {model} is no longer available",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Switch to {replacement}?",
+            "description": "Mistral no longer offers the model {model}, so the assistant cannot answer. Select Submit to switch to {replacement}. You can choose another model later in the integration options."
+          }
+        }
+      }
+    }
   }
 }

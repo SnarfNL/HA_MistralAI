@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -12,7 +13,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_track_time_interval
 
+from ._models import MODEL_CHECK_INTERVAL, async_check_model
 from ._web_search import WebSearchConversations
 from .api import MistralClient
 from .const import DOMAIN
@@ -64,6 +67,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> b
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
+    # Retired-model check (MA-14): in the background so startup is not
+    # delayed, then once a day.
+    entry.async_create_background_task(
+        hass, async_check_model(hass, entry), "mistral_check_model"
+    )
+
+    async def _periodic_model_check(_now: datetime) -> None:
+        await async_check_model(hass, entry)
+
+    entry.async_on_unload(
+        async_track_time_interval(hass, _periodic_model_check, MODEL_CHECK_INTERVAL)
+    )
     return True
 
 

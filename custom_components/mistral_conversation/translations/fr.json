@@ -118,5 +118,18 @@
     "invalid_response": {
       "message": "Mistral a renvoyé une réponse illisible."
     }
+  },
+  "issues": {
+    "model_retired": {
+      "title": "Le modèle Mistral {model} n'est plus disponible",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Passer à {replacement} ?",
+            "description": "Mistral ne propose plus le modèle {model}, l'assistant ne peut donc plus répondre. Sélectionnez Valider pour passer à {replacement}. Vous pourrez choisir un autre modèle plus tard dans les options de l'intégration."
+          }
+        }
+      }
+    }
   }
 }

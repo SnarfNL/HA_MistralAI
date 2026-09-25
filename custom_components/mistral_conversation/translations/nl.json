@@ -118,5 +118,18 @@
     "invalid_response": {
       "message": "Mistral gaf een antwoord dat niet te lezen was."
     }
+  },
+  "issues": {
+    "model_retired": {
+      "title": "Mistral-model {model} is niet meer beschikbaar",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Overschakelen naar {replacement}?",
+            "description": "Mistral biedt het model {model} niet meer aan, dus de assistent kan geen antwoord geven. Kies Verzenden om over te schakelen naar {replacement}. Je kunt later een ander model kiezen in de opties van de integratie."
+          }
+        }
+      }
+    }
   }
 }
