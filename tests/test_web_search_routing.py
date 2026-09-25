@@ -10,6 +10,8 @@ Plus ``_web_search_tool_def`` (shape of the advertised tool) and the
 ``_convert_chat_log_to_messages`` guard that drops content-less assistant turns
 left behind by an intercepted call.
 """
+# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
+# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import unittest

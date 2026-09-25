@@ -117,7 +117,7 @@ def _schema_to_openapi(
         except ImportError:
             from voluptuous_openapi import convert
         result = convert(schema, custom_serializer=custom_serializer)
-    except Exception:  # pylint: disable=broad-except
+    except Exception:  # noqa: BLE001 - schema conversion may fail in many ways; fall back to empty schema
         _LOGGER.debug("Could not serialize %s, using empty schema", log_context)
         return empty_schema
 

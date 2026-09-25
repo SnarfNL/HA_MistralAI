@@ -9,6 +9,8 @@ through to never inspected ``multiple`` either. Also covers the
 ``_sanitize()`` safety net applied to both paths' output (same class of
 sentinel-leak issue fixed for tool schemas in #36).
 """
+# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
+# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import json

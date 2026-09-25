@@ -2,6 +2,8 @@
 
 Loads ``stt.py`` via the integration package, with HA stubs installed first.
 """
+# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
+# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import struct

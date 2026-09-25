@@ -200,7 +200,7 @@ class MistralAITaskEntity(AITaskEntity):
             if required:
                 result["required"] = required
             return _sanitize(result)
-        except Exception as err:  # pylint: disable=broad-except
+        except Exception as err:  # noqa: BLE001 - HA selector shapes vary; log and fall back rather than crash
             _LOGGER.warning("Could not build JSON schema from HA selectors: %s", err)
             return None
 
@@ -287,7 +287,7 @@ class MistralAITaskEntity(AITaskEntity):
                 # diagnostic only, the parsed data is still returned as-is.
                 try:
                     task.structure(parsed)
-                except Exception as err:  # pylint: disable=broad-except
+                except Exception as err:  # noqa: BLE001 - diagnostic-only validation, must never raise
                     _LOGGER.warning(
                         "AI task response does not match requested structure: %s "
                         "(response: %s)",

@@ -4,6 +4,8 @@ Covered: ``_sanitize`` (recursive JSON-safe coercion), ``_to_mistral_id``
 (stable 9-char hex ID), and ``_async_stream_delta`` (SSE parser for
 chat-completions streaming responses).
 """
+# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
+# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import json

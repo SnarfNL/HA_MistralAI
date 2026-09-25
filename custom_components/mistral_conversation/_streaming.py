@@ -10,7 +10,7 @@ import base64
 import json
 import re
 from collections.abc import AsyncGenerator
-from typing import Any, Protocol
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Sentence segmentation
@@ -91,18 +91,6 @@ def pop_complete_sentences(
 #   event: speech.audio.done
 #   data: {"type":"speech.audio.done","usage":{...}}
 # ---------------------------------------------------------------------------
-
-
-class _AsyncByteStream(Protocol):
-    """Minimal protocol matching aiohttp.StreamReader.iter_any()."""
-
-    def iter_any(self) -> AsyncGenerator[bytes]: ...
-
-
-class _AsyncResponse(Protocol):
-    """Minimal protocol matching aiohttp.ClientResponse for our needs."""
-
-    content: _AsyncByteStream
 
 
 async def iter_sse_audio_chunks(
