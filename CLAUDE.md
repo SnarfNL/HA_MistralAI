@@ -40,7 +40,7 @@ CI (GitHub Actions) runs hassfest, HACS validation, ruff and pytest on every PR.
 
 ## PR description
 
-Write it in English, with: the problem, what changed (plain language, no jargon), and a testchecklist of concrete steps the maintainer can do in Home Assistant or on GitHub before merging.
+Write it in Dutch, with: the problem, what changed (plain language, no jargon), and a testchecklist of concrete steps the maintainer can do in Home Assistant or on GitHub before merging.
 
 ## Code conventions
 
