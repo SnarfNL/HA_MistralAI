@@ -190,7 +190,7 @@ class HeaderSplitAcrossChunksTests(unittest.IsolatedAsyncioTestCase):
             for chunk in chunks:
                 yield chunk
 
-        session = SimpleNamespace(post=lambda *a, **k: _FakeResponse())
+        session = SimpleNamespace(request=lambda *a, **k: _FakeResponse())
         entity = _make_entity(SimpleNamespace(session=session, headers={}))
         queue: asyncio.Queue = asyncio.Queue()
         with patch.object(tts_module, "iter_sse_audio_chunks", fake_iter):

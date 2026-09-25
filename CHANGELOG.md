@@ -6,6 +6,14 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Fixed:** an error during Home Assistant startup could put the Mistral API key in the integration's error message and the log. Errors are now described without request headers.
+- **Fixed:** after a failed conversation turn, every later question in the same conversation failed with "Mistral returned an error (HTTP 400)". The failed turn is now replaced by the spoken error message, so the conversation continues normally.
+- **Fixed:** a timeout or network error in a Home Assistant tool (for example a script) was reported as "Mistral can't be reached". Only errors from Mistral itself are reported that way now.
+- **Fixed:** an unreadable answer from Mistral (invalid JSON) is now spoken as an error instead of failing silently with a traceback.
+- **Fixed:** when the account is rate limited or the key is invalid, a web search no longer falls back to a second request that waits and fails the same way; the error is spoken straight away.
+- **Fixed:** a speech-to-text request that is retried after a rate limit now sends the audio again correctly.
+- **Changed:** loading the voice list at startup no longer delays the TTS setup; it runs in the background. Error logs name the model or voice involved again, and a failed voice-list fetch is logged as a warning instead of an error.
+- **Changed:** a web-search answer that ends in a question now keeps the voice satellite listening, like every other answer (since MA-02 the web-search answer goes through the conversation history).
 - **Fixed:** after a web search via a trigger phrase or *Always search*, the answer is now part of the conversation history, so a follow-up question ("and tomorrow?") has context. The answer is also streamed to TTS like any other reply. MA-02.
 - **Fixed:** timeouts are handled everywhere: setup retries automatically, the config flow shows *Failed to connect* instead of *Unknown error*, and STT, TTS, conversation and AI Task fail cleanly instead of logging a traceback. MA-03.
 - **Changed:** when Mistral fails during a conversation, the voice assistant now speaks a short message in your language (English, Dutch or French) instead of failing silently. An invalid API key (HTTP 401) starts the re-authentication flow straight away. A rate limit (HTTP 429) is retried up to twice before "Mistral is temporarily overloaded" is reported. Error messages no longer contain raw API responses; those are only in the log. MA-07.

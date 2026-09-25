@@ -24,7 +24,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._api import mistral_request
+from ._api import describe_error, mistral_request, read_json
 from .const import (
     DOMAIN,
     MISTRAL_API_BASE,
@@ -159,7 +159,9 @@ class MistralSTTEntity(SpeechToTextEntity):
         )
 
         runtime = self.hass.data[DOMAIN][self._entry.entry_id]
-        try:
+
+        def build_form() -> aiohttp.FormData:
+            # A FormData can only be sent once, so a 429 retry needs a new one.
             form = aiohttp.FormData()
             form.add_field(
                 "file",
@@ -170,7 +172,9 @@ class MistralSTTEntity(SpeechToTextEntity):
             form.add_field("model", STT_MODEL)
             if lang_code:
                 form.add_field("language", lang_code)
+            return form
 
+        try:
             # Use only the Authorization header for multipart (no Content-Type override)
             auth_header = {"Authorization": runtime.headers["Authorization"]}
             async with mistral_request(
@@ -179,18 +183,19 @@ class MistralSTTEntity(SpeechToTextEntity):
                 "post",
                 f"{MISTRAL_API_BASE}/audio/transcriptions",
                 headers=auth_header,
-                data=form,
+                data_factory=build_form,
                 timeout=60,
             ) as resp:
-                result = await resp.json()
+                result = await read_json(resp)
 
         except HomeAssistantError as err:
             # The STT API reports failure through the result state, not by
             # raising; the pipeline then tells the user it did not understand.
-            _LOGGER.error("Mistral STT request failed: %r", err)
+            _LOGGER.error("Mistral STT request failed: %s", describe_error(err))
             return SpeechResult("", SpeechResultState.ERROR)
 
-        text = result.get("text", "").strip()
+        text = result.get("text")
+        text = text.strip() if isinstance(text, str) else ""
         if not text:
             _LOGGER.warning("Voxtral returned empty transcription")
             return SpeechResult("", SpeechResultState.ERROR)

@@ -114,6 +114,9 @@
     },
     "unexpected_error": {
       "message": "Er ging iets mis in het gesprek met Mistral."
+    },
+    "invalid_response": {
+      "message": "Mistral gaf een antwoord dat niet te lezen was."
     }
   }
 }

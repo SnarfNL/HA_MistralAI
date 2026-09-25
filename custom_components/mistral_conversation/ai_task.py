@@ -22,7 +22,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 if TYPE_CHECKING:
     from pathlib import Path
 
-from ._api import mistral_error, mistral_request
+from ._api import mistral_error, mistral_request, translate_stream
 from .const import (
     CONF_MAX_TOKENS,
     CONF_MODEL,
@@ -274,10 +274,11 @@ class MistralAITaskEntity(AITaskEntity):
             f"{MISTRAL_API_BASE}/chat/completions",
             json=payload,
             timeout=90,
+            log_context=f"model={model}",
         ) as resp:
             async for _ in chat_log.async_add_delta_content_stream(
                 self.entity_id,
-                _async_stream_delta(resp),
+                translate_stream(_async_stream_delta(resp)),
             ):
                 pass
 

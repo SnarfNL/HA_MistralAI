@@ -22,7 +22,14 @@ from homeassistant.helpers import intent, llm
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._api import async_spoken_error, mistral_error, mistral_request
+from ._api import (
+    async_spoken_error,
+    describe_error,
+    is_unrecoverable,
+    mistral_request,
+    read_json,
+    translate_stream,
+)
 from ._web_search import build_conversation_payload
 from .const import (
     AGENT_CAPABLE_MODELS,
@@ -490,21 +497,33 @@ class MistralConversationEntity(ConversationEntity):
         """Process a conversation turn; a failure is spoken, not raised.
 
         Returning an error IntentResponse (instead of raising) lets the voice
-        satellite speak a short message in the user's language.
+        satellite speak a short message in the user's language. Because HA
+        then saves the chat log, the turn's partial content (tool calls and
+        tool results without a final reply) is replaced by the error message
+        first; otherwise Mistral would reject every later turn in this
+        conversation with HTTP 400.
         """
+        turn_start = len(chat_log.content)
         try:
             return await self._async_converse(user_input, chat_log)
         except HomeAssistantError as err:
-            _LOGGER.warning("Mistral conversation turn failed: %r", err)
-            message = await async_spoken_error(self.hass, err, user_input.language)
-            intent_response = intent.IntentResponse(language=user_input.language)
-            intent_response.async_set_error(
-                intent.IntentResponseErrorCode.UNKNOWN, message
-            )
-            return ConversationResult(
-                response=intent_response,
-                conversation_id=chat_log.conversation_id,
-            )
+            _LOGGER.warning("Mistral conversation turn failed: %s", describe_error(err))
+            failure: Exception = err
+        except Exception as err:
+            _LOGGER.exception("Unexpected error in Mistral conversation")
+            failure = err
+
+        message = await async_spoken_error(self.hass, failure, user_input.language)
+        del chat_log.content[turn_start:]
+        chat_log.async_add_assistant_content_without_tools(
+            conversation.AssistantContent(agent_id=user_input.agent_id, content=message)
+        )
+        intent_response = intent.IntentResponse(language=user_input.language)
+        intent_response.async_set_error(intent.IntentResponseErrorCode.UNKNOWN, message)
+        return ConversationResult(
+            response=intent_response,
+            conversation_id=chat_log.conversation_id,
+        )
 
     async def _async_converse(
         self,
@@ -588,8 +607,13 @@ class MistralConversationEntity(ConversationEntity):
                         conv_id=chat_log.conversation_id,
                     )
                 except HomeAssistantError as err:
+                    # A bad key or a rate limit fails the chat call too (after
+                    # its own retries); report it now instead of waiting twice.
+                    if is_unrecoverable(err):
+                        raise
                     _LOGGER.debug(
-                        "Web search failed, falling back to chat completions: %s", err
+                        "Web search failed, falling back to chat completions: %s",
+                        describe_error(err),
                     )
                     ws_reply = None
 
@@ -637,21 +661,15 @@ class MistralConversationEntity(ConversationEntity):
             payload: dict[str, Any] = _sanitize(raw_payload)
 
             captured_searches.clear()
-            try:
-                await self._stream_and_collect(
-                    payload,
-                    chat_log,
-                    user_input,
-                    intercept_tool=(
-                        WEB_SEARCH_TOOL_NAME if offer_web_search_tool else None
-                    ),
-                    intercepted=captured_searches,
-                )
-            except HomeAssistantError:
-                raise
-            except Exception as err:
-                _LOGGER.exception("Unexpected error in Mistral conversation")
-                raise mistral_error("unexpected_error") from err
+            await self._stream_and_collect(
+                payload,
+                chat_log,
+                user_input,
+                intercept_tool=(
+                    WEB_SEARCH_TOOL_NAME if offer_web_search_tool else None
+                ),
+                intercepted=captured_searches,
+            )
 
             # The model asked for a web search: service it against the
             # Conversations API and hand the result back on the next round. Checked before
@@ -670,7 +688,9 @@ class MistralConversationEntity(ConversationEntity):
                         conv_id=None,
                     )
                 except HomeAssistantError as err:
-                    _LOGGER.debug("Web search lookup failed: %s", err)
+                    if is_unrecoverable(err):
+                        raise
+                    _LOGGER.debug("Web search lookup failed: %s", describe_error(err))
                     results = ""
 
                 injected.append({
@@ -731,17 +751,24 @@ class MistralConversationEntity(ConversationEntity):
             )
 
         async with mistral_request(
-            self.hass, self._entry, "post", url, json=_sanitize(payload), timeout=90
+            self.hass,
+            self._entry,
+            "post",
+            url,
+            json=_sanitize(payload),
+            timeout=90,
+            log_context=f"model={model}",
         ) as resp:
-            data = await resp.json()
+            data = await read_json(resp)
 
         new_conv_id = data.get("conversation_id") or data.get("id")
         if stateful and new_conv_id:
             self._delete_mistral_conversations(convs.set(conv_id, new_conv_id))
 
         parts: list[str] = []
-        for output in data.get("outputs", []):
-            if output.get("type") == "tool.execution":
+        outputs = data.get("outputs")
+        for output in outputs if isinstance(outputs, list) else []:
+            if not isinstance(output, dict) or output.get("type") == "tool.execution":
                 continue
             content = output.get("content")
             if isinstance(content, str):
@@ -750,7 +777,8 @@ class MistralConversationEntity(ConversationEntity):
                 for chunk in content:
                     if isinstance(chunk, dict) and chunk.get("type") == "text":
                         parts.append(chunk.get("text", ""))
-        return "".join(parts).strip() or data.get("message", "")
+        message = data.get("message")
+        return "".join(parts).strip() or (message if isinstance(message, str) else "")
 
     def _delete_mistral_conversations(self, ids: list[str]) -> None:
         """Delete Mistral conversations in the background; failures are only logged."""
@@ -762,21 +790,23 @@ class MistralConversationEntity(ConversationEntity):
             )
 
     async def _delete_mistral_conversation(self, mistral_id: str) -> None:
-        runtime = self._runtime
+        """Best-effort cleanup; a failure is only logged at debug level."""
         try:
-            async with runtime.session.delete(
+            async with mistral_request(
+                self.hass,
+                self._entry,
+                "delete",
                 f"{MISTRAL_API_BASE}/conversations/{mistral_id}",
-                headers=runtime.headers,
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                if resp.status >= 400:
-                    _LOGGER.debug(
-                        "Could not delete Mistral conversation %s: HTTP %s",
-                        mistral_id,
-                        resp.status,
-                    )
-        except (aiohttp.ClientError, TimeoutError) as err:
-            _LOGGER.debug("Could not delete Mistral conversation %s: %s", mistral_id, err)
+                timeout=15,
+                log_level=logging.DEBUG,
+            ):
+                pass
+        except HomeAssistantError as err:
+            _LOGGER.debug(
+                "Could not delete Mistral conversation %s: %s",
+                mistral_id,
+                describe_error(err),
+            )
 
     # ------------------------------------------------------------------
     # Streaming HTTP + chat_log delta integration
@@ -803,8 +833,11 @@ class MistralConversationEntity(ConversationEntity):
             f"{MISTRAL_API_BASE}/chat/completions",
             json=payload,
             timeout=90,
+            log_context=f"model={payload.get('model')}",
         ) as resp:
-            stream = _async_stream_delta(resp)
+            # Only reading Mistral's stream is translated; errors from HA tools
+            # that run while the reply streams pass through unchanged.
+            stream = translate_stream(_async_stream_delta(resp))
             if intercept_tool is not None:
                 stream = _filter_intercepted_tool(
                     stream, intercept_tool, intercepted if intercepted is not None else []
