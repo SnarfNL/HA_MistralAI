@@ -12,7 +12,6 @@ import re
 from collections.abc import AsyncGenerator
 from typing import Any, Protocol
 
-
 # ---------------------------------------------------------------------------
 # Sentence segmentation
 # ---------------------------------------------------------------------------
