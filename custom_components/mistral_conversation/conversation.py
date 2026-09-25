@@ -22,6 +22,7 @@ from homeassistant.helpers import intent, llm
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from ._web_search import build_conversation_payload
 from .const import (
     AGENT_CAPABLE_MODELS,
     CONF_CONTINUE_CONVERSATION,
@@ -161,7 +162,7 @@ def _web_search_tool_def() -> dict[str, Any]:
 
     Mistral's built-in ``{"type": "web_search"}`` tool is rejected by
     /v1/chat/completions, so web search is advertised as a normal function and
-    serviced by us against the Agents API. The description is what steers the
+    serviced by us against the Conversations API. The description is what steers the
     model, so it states both when to use it and when not to — without it the
     model reaches for search on questions it can answer locally.
     """
@@ -408,7 +409,7 @@ async def _filter_intercepted_tool(
 ) -> AsyncGenerator[dict[str, Any]]:
     """Strip calls to ``tool_name`` from a delta stream, collecting their queries.
 
-    The named tool is one we service ourselves (web search via the Agents API),
+    The named tool is one we service ourselves (web search via the Conversations API),
     so HA must never see it — it isn't in HA's LLM API and executing it would
     raise. Each intercepted call's ``query`` argument is appended to
     ``collected``; a call with no usable query is dropped silently.
@@ -514,13 +515,13 @@ class MistralConversationEntity(ConversationEntity):
         )
 
         # Web search needs an agent-capable model — it is only reachable through
-        # the Agents/Conversations API.
+        # the Conversations API.
         web_search_available = web_search and any(
             model.startswith(m) for m in AGENT_CAPABLE_MODELS
         )
 
         # Trigger phrases, when configured, are leading: a match goes straight to
-        # the Agents API and a non-match skips web search for this turn. An empty
+        # the Conversations API and a non-match skips web search for this turn. An empty
         # trigger list (the default) leaves the decision to web_search_mode.
         trigger_matched, trigger_query = _resolve_trigger(
             user_input.text, web_search_trigger if web_search_available else ""
@@ -536,7 +537,7 @@ class MistralConversationEntity(ConversationEntity):
         if offer_web_search_tool:
             tools = (tools or []) + [_web_search_tool_def()]
 
-        # --- Direct web search path: Agents/Conversations API -------------
+        # --- Direct web search path: Conversations API -------------
         # Used when a trigger phrase matched, or in legacy "always" mode. This
         # path carries no HA tools, so device control cannot happen on it.
         use_direct_web_search = web_search_available and (
@@ -553,15 +554,11 @@ class MistralConversationEntity(ConversationEntity):
                     "falling through to chat completions"
                 )
             else:
-                system_content = chat_log.content[0] if chat_log.content else None
-                system_prompt = (
-                    system_content.content if hasattr(system_content, "content") else ""
-                )
                 try:
                     ws_reply = await self._conversations_chat(
                         model=model,
-                        system_prompt=system_prompt,
                         user_text=search_text,
+                        language=user_input.language,
                         conv_id=chat_log.conversation_id,
                     )
                 except HomeAssistantError as err:
@@ -630,8 +627,8 @@ class MistralConversationEntity(ConversationEntity):
                     f"Unexpected error talking to Mistral: {err}"
                 ) from err
 
-            # The model asked for a web search: service it against the Agents
-            # API and hand the result back on the next round. Checked before
+            # The model asked for a web search: service it against the
+            # Conversations API and hand the result back on the next round. Checked before
             # unresponded_tool_results, because an intercepted call leaves no
             # pending tool result behind.
             if captured_searches:
@@ -640,12 +637,11 @@ class MistralConversationEntity(ConversationEntity):
                 try:
                     results = await self._conversations_chat(
                         model=model,
-                        system_prompt=(
-                            "Answer the search query factually and concisely. "
-                            "Cite nothing; plain prose only."
-                        ),
                         user_text=query,
-                        conv_id=chat_log.conversation_id,
+                        language=user_input.language,
+                        # Stateless: the chat log already holds the history and
+                        # the model writes a self-contained query.
+                        conv_id=None,
                     )
                 except HomeAssistantError as err:
                     _LOGGER.debug("Web search lookup failed: %s", err)
@@ -687,57 +683,35 @@ class MistralConversationEntity(ConversationEntity):
         return result
 
     # ------------------------------------------------------------------
-    # Agents / Conversations API for web search
+    # Conversations API for web search
     # ------------------------------------------------------------------
-    async def _ensure_web_search_agent(self, model: str, system_prompt: str) -> str:
-        """Create (or reuse) a Mistral Agent with web_search enabled."""
-        runtime = self._runtime
-        if runtime.web_search_agent_id:
-            return runtime.web_search_agent_id
-
-        payload = _sanitize({
-            "model": model,
-            "name": "HA Mistral Web Search",
-            "description": "Home Assistant conversation agent with web search",
-            "instructions": system_prompt,
-            "tools": [{"type": "web_search"}],
-            "completion_args": {"temperature": 0.3, "top_p": 0.95},
-        })
-        async with self._runtime.session.post(
-            f"{MISTRAL_API_BASE}/agents",
-            headers=self._runtime.headers,
-            json=payload,
-            timeout=aiohttp.ClientTimeout(total=15),
-        ) as resp:
-            if resp.status >= 400:
-                body = await resp.text()
-                raise HomeAssistantError(
-                    f"Failed to create Mistral web-search agent: {resp.status} {body}"
-                )
-            data = await resp.json()
-            agent_id = data["id"]
-            self._runtime.web_search_agent_id = agent_id
-            _LOGGER.debug("Created Mistral web-search agent: %s", agent_id)
-            return agent_id
-
     async def _conversations_chat(
         self,
         model: str,
-        system_prompt: str,
         user_text: str,
-        conv_id: str,
+        language: str | None,
+        conv_id: str | None,
     ) -> str:
-        """Use the Mistral Conversations API (beta) with web search."""
-        runtime = self._runtime
-        agent_id = await self._ensure_web_search_agent(model, system_prompt)
+        """Answer ``user_text`` with the Conversations API and web search.
 
-        mistral_conv_id = getattr(runtime, "_ws_convs", {}).get(conv_id)
+        ``conv_id`` is the HA conversation id on the direct route, where the
+        Mistral conversation is kept briefly so follow-ups have context. ``None``
+        means a stateless one-off (nothing stored, nothing remembered).
+        """
+        runtime = self._runtime
+        convs = runtime.web_search_convs
+        self._delete_mistral_conversations(convs.pop_expired())
+
+        stateful = conv_id is not None
+        mistral_conv_id = convs.get(conv_id) if stateful else None
         if mistral_conv_id:
             url = f"{MISTRAL_API_BASE}/conversations/{mistral_conv_id}"
-            payload: dict[str, Any] = {"inputs": user_text}
+            payload: dict[str, Any] = {"inputs": user_text, "store": True}
         else:
             url = f"{MISTRAL_API_BASE}/conversations"
-            payload = {"agent_id": agent_id, "inputs": user_text}
+            payload = build_conversation_payload(
+                model, user_text, language, store=stateful
+            )
 
         async with runtime.session.post(
             url,
@@ -753,10 +727,8 @@ class MistralConversationEntity(ConversationEntity):
             data = await resp.json()
 
         new_conv_id = data.get("conversation_id") or data.get("id")
-        if new_conv_id:
-            if not hasattr(runtime, "_ws_convs"):
-                runtime._ws_convs = {}
-            runtime._ws_convs[conv_id] = new_conv_id
+        if stateful and new_conv_id:
+            self._delete_mistral_conversations(convs.set(conv_id, new_conv_id))
 
         parts: list[str] = []
         for output in data.get("outputs", []):
@@ -770,6 +742,32 @@ class MistralConversationEntity(ConversationEntity):
                     if isinstance(chunk, dict) and chunk.get("type") == "text":
                         parts.append(chunk.get("text", ""))
         return "".join(parts).strip() or data.get("message", "")
+
+    def _delete_mistral_conversations(self, ids: list[str]) -> None:
+        """Delete Mistral conversations in the background; failures are only logged."""
+        for mistral_id in ids:
+            self._entry.async_create_background_task(
+                self.hass,
+                self._delete_mistral_conversation(mistral_id),
+                "mistral_delete_web_search_conversation",
+            )
+
+    async def _delete_mistral_conversation(self, mistral_id: str) -> None:
+        runtime = self._runtime
+        try:
+            async with runtime.session.delete(
+                f"{MISTRAL_API_BASE}/conversations/{mistral_id}",
+                headers=runtime.headers,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status >= 400:
+                    _LOGGER.debug(
+                        "Could not delete Mistral conversation %s: HTTP %s",
+                        mistral_id,
+                        resp.status,
+                    )
+        except (aiohttp.ClientError, TimeoutError) as err:
+            _LOGGER.debug("Could not delete Mistral conversation %s: %s", mistral_id, err)
 
     # ------------------------------------------------------------------
     # Streaming HTTP + chat_log delta integration

@@ -6,6 +6,9 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Changed:** web search no longer creates a Mistral *agent* (MA-04). Each search starts a conversation with the model and the `web_search` tool directly, so restarting Home Assistant no longer adds another "HA Mistral Web Search" agent to your Mistral account, and no house data (entity list, date, your prompt) is stored on Mistral's side. Agents with that name created by earlier versions are unused now and can be deleted in Mistral Studio; they are not removed automatically.
+- **Changed:** searches the model asks for are stateless (`store: false`). On the trigger-phrase and *Always search* routes the Mistral conversation kept for follow-ups now expires 5 minutes after last use, holds at most 50 entries, and is deleted on Mistral's side when it expires.
+- **Changed:** answers on the trigger-phrase and *Always search* routes use a generic instruction (short, factual, suited to speech) plus your language instead of your full system prompt, so they no longer follow the assistant's persona.
 - **Fixed:** With web search enabled, *every* utterance was routed through the Agents API — including plain device commands. That path never passed Home Assistant tools, so device control silently failed on it (the model replies "I can't perform physical actions"). Web search is now opt-in per turn. Fixes #29.
 - **Added:** `web_search_mode` option. Default `model` advertises web search to the model as a tool and services the call against the Agents API, so a turn keeps its HA tools and can search *and* control devices. `always` preserves the previous behaviour.
 - **Added:** `web_search_trigger` option — optional comma-separated phrases (empty by default). When set it takes precedence over `web_search_mode`: only utterances starting with a phrase search (phrase stripped, longest match wins, case-insensitive); all others never search.

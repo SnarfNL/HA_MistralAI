@@ -236,7 +236,7 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                     # ── Web search routing ────────────────────────────────
                     # 'model': the model calls a web_search tool when it needs
                     # one, keeping HA tools available on the same turn.
-                    # 'always': legacy — every turn goes to the Agents API,
+                    # 'always': legacy — every turn goes to the Conversations API,
                     # which is slower and carries no HA tools.
                     vol.Optional(
                         CONF_WEB_SEARCH_MODE,

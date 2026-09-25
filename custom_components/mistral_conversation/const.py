@@ -26,7 +26,7 @@ TTS_MODES = [TTS_MODE_STREAM, TTS_MODE_BATCH]
 # web_search_mode values
 #   model  — the model decides per turn by calling a `web_search` tool. Keeps
 #            HA tools available, so one turn can both search and control devices.
-#   always — legacy behaviour: every turn goes to the Agents API (no HA tools).
+#   always — legacy behaviour: every turn goes to the Conversations API (no HA tools).
 WEB_SEARCH_MODE_MODEL = "model"
 WEB_SEARCH_MODE_ALWAYS = "always"
 WEB_SEARCH_MODES = [WEB_SEARCH_MODE_MODEL, WEB_SEARCH_MODE_ALWAYS]
@@ -36,7 +36,7 @@ WEB_SEARCH_MODES = [WEB_SEARCH_MODE_MODEL, WEB_SEARCH_MODE_ALWAYS]
 # /v1/chat/completions (HTTP 400 "WebSearchTool connector is not supported",
 # code 1800) even though the API reference lists it in the `tools` union — it is
 # only honoured on /v1/agents and /v1/conversations. So we expose web search as
-# an ordinary function tool and service the call ourselves via the Agents API.
+# an ordinary function tool and service the call ourselves via the Conversations API.
 WEB_SEARCH_TOOL_NAME = "web_search"
 
 # ---------------------------------------------------------------------------
@@ -49,7 +49,7 @@ DEFAULT_CONTINUE_CONVERSATION = False
 DEFAULT_WEB_SEARCH = False
 DEFAULT_WEB_SEARCH_MODE = WEB_SEARCH_MODE_MODEL
 # Optional comma-separated trigger phrases. When non-empty they are LEADING:
-# an utterance starting with one of them is sent straight to the Agents API
+# an utterance starting with one of them is sent straight to the Conversations API
 # (phrase stripped), and anything else skips web search entirely. Empty (the
 # default) leaves routing to `web_search_mode`. Opt-in by design — trigger
 # phrases are language-specific, so shipping a list would only fit some users.
@@ -100,7 +100,7 @@ CHAT_MODELS = [
     "ministral-3b-latest",  # Ultra-fast, lightweight, simple commands
     "ministral-14b-latest",  # New (Ministral 3, Dec 2025): strongest small/edge model
     "mistral-small-latest",  # Balanced: speed + quality (Mistral Small 4)
-    "mistral-medium-latest",  # Required for web search via Agents API; pricier — often rate-limited on free-tier keys
+    "mistral-medium-latest",  # Required for web search via Conversations API; pricier — often rate-limited on free-tier keys
     "mistral-large-latest",  # Most capable, best for complex reasoning; pricier — often rate-limited on free-tier keys
 ]
 
