@@ -6,7 +6,6 @@ conversation cleanup going through the shared request helper.
 
 No real Home Assistant and no network.
 """
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import logging
@@ -14,16 +13,16 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 import aiohttp
-import mistral_conversation as init_module
 from homeassistant.exceptions import ConfigEntryNotReady
-from mistral_conversation import _api
-from mistral_conversation import conversation as conv_module
-from mistral_conversation import stt as stt_module
-from mistral_conversation import tts as tts_module
-from mistral_conversation.const import DOMAIN
+
+import custom_components.mistral_conversation as init_module
+from custom_components.mistral_conversation import api
+from custom_components.mistral_conversation import conversation as conv_module
+from custom_components.mistral_conversation import stt as stt_module
+from custom_components.mistral_conversation import tts as tts_module
+
+from .helpers import attach_runtime, with_hass
 
 API_KEY = "sk-secret-key"
 
@@ -85,15 +84,13 @@ class SttRetryTests(unittest.IsolatedAsyncioTestCase):
         async def audio():
             yield b"\x00\x00" * 160
 
-        runtime = SimpleNamespace(
-            session=SimpleNamespace(request=request), headers={"Authorization": "Bearer k"}
-        )
-        hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
-        entity = stt_module.MistralSTTEntity(hass, SimpleNamespace(entry_id="entry1"))
+        entry = SimpleNamespace(entry_id="entry1")
+        attach_runtime(entry, SimpleNamespace(request=request))
+        entity = with_hass(stt_module.MistralSTTEntity(entry), SimpleNamespace(data={}))
         metadata = SimpleNamespace(language="nl", sample_rate=16000, channel=1, bit_rate=16)
         with (
             patch.object(stt_module.aiohttp, "FormData", MagicMock(side_effect=lambda: MagicMock())),
-            patch.object(_api, "_sleep", AsyncMock()),
+            patch.object(api, "_sleep", AsyncMock()),
             patch.object(stt_module, "SpeechResult", lambda text, state: (text, state)),
             patch.object(stt_module, "SpeechResultState", SimpleNamespace(SUCCESS="ok", ERROR="error")),
         ):
@@ -107,12 +104,11 @@ class SttRetryTests(unittest.IsolatedAsyncioTestCase):
         async def audio():
             yield b"\x00\x00" * 160
 
-        runtime = SimpleNamespace(
-            session=SimpleNamespace(request=lambda *a, **k: _Response(200, {"text": None})),
-            headers={"Authorization": "Bearer k"},
+        entry = SimpleNamespace(entry_id="entry1")
+        attach_runtime(
+            entry, SimpleNamespace(request=lambda *a, **k: _Response(200, {"text": None}))
         )
-        hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
-        entity = stt_module.MistralSTTEntity(hass, SimpleNamespace(entry_id="entry1"))
+        entity = with_hass(stt_module.MistralSTTEntity(entry), SimpleNamespace(data={}))
         metadata = SimpleNamespace(language="nl", sample_rate=16000, channel=1, bit_rate=16)
         with (
             patch.object(stt_module, "SpeechResult", lambda text, state: (text, state)),
@@ -124,12 +120,12 @@ class SttRetryTests(unittest.IsolatedAsyncioTestCase):
 
 class VoiceFetchAtStartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_fetch_runs_as_a_background_task(self) -> None:
-        runtime = SimpleNamespace(session=None, headers={}, tts_entity=None)
-        hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
+        hass = SimpleNamespace(data={})
         entry = SimpleNamespace(
             entry_id="entry1", options={}, async_create_background_task=MagicMock()
         )
-        entity = tts_module.MistralTTSEntity(hass, entry)
+        runtime = attach_runtime(entry)
+        entity = with_hass(tts_module.MistralTTSEntity(entry), hass)
         refresh = AsyncMock()
         with (
             patch.object(
@@ -148,10 +144,10 @@ class VoiceFetchAtStartupTests(unittest.IsolatedAsyncioTestCase):
 
 class DeleteConversationTests(unittest.IsolatedAsyncioTestCase):
     def _entity(self, request):
-        runtime = SimpleNamespace(session=SimpleNamespace(request=request), headers={"A": "b"})
-        hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
+        hass = SimpleNamespace(data={})
         entry = SimpleNamespace(entry_id="entry1", options={}, async_start_reauth=MagicMock())
-        return conv_module.MistralConversationEntity(hass, entry)
+        attach_runtime(entry, SimpleNamespace(request=request))
+        return with_hass(conv_module.MistralConversationEntity(entry), hass)
 
     async def test_delete_uses_the_shared_helper(self) -> None:
         calls: list = []

@@ -43,31 +43,27 @@ from homeassistant.components.tts import (
     TtsAudioType,
     Voice,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._api import (
-    describe_error,
-    mistral_error,
-    mistral_request,
-    read_json,
-    translate_stream,
-)
+from . import MistralConfigEntry
 from ._streaming import (
     has_speakable_content,
     iter_sse_audio_chunks,
     pop_complete_sentences,
 )
 from ._voices import build_voice_list
+from .api import (
+    describe_error,
+    mistral_error,
+    read_json,
+    translate_stream,
+)
 from .const import (
     CONF_TTS_MODE,
     DEFAULT_TTS_MODE,
     DEFAULT_TTS_VOICE,
-    DOMAIN,
-    MISTRAL_API_BASE,
     TTS_INTER_SENTENCE_SILENCE_BYTES,
     TTS_LANGUAGES,
     TTS_MAX_INFLIGHT_SENTENCES,
@@ -76,8 +72,12 @@ from .const import (
     TTS_MODEL,
     TTS_WAV_HEADER_SIZE,
 )
+from .entity import TTS_DEVICE, MistralEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# Cloud service: nothing polls, calls may run in parallel.
+PARALLEL_UPDATES = 0
 
 # Pre-computed once at import. ``bytes(N)`` materialises N zero bytes — valid
 # PCM silence at any sample rate / channel count. Yielded between sentences
@@ -113,11 +113,11 @@ def _silence_for_header(header: bytes) -> bytes:
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: MistralConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Mistral AI TTS entity."""
-    async_add_entities([MistralTTSEntity(hass, config_entry)])
+    async_add_entities([MistralTTSEntity(config_entry)])
 
 
 # ---------------------------------------------------------------------------
@@ -125,19 +125,7 @@ async def async_setup_entry(
 # ---------------------------------------------------------------------------
 
 
-def tts_device_info(entry: ConfigEntry) -> DeviceInfo:
-    """Device shared by the TTS entity and its refresh button."""
-    return DeviceInfo(
-        identifiers={(DOMAIN, f"{entry.entry_id}_tts")},
-        name="Mistral AI TTS",
-        manufacturer="Mistral AI",
-        model=TTS_MODEL,
-        entry_type=DeviceEntryType.SERVICE,
-        configuration_url="https://docs.mistral.ai/capabilities/audio_generation",
-    )
-
-
-class MistralTTSEntity(TextToSpeechEntity):
+class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
     """Mistral AI text-to-speech entity.
 
     Voice selection priority (highest to lowest):
@@ -148,13 +136,11 @@ class MistralTTSEntity(TextToSpeechEntity):
          automation without an explicit voice option.
     """
 
-    _attr_has_entity_name = True
+    _device = TTS_DEVICE
     _attr_name = "Mistral AI TTS"
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        self.hass = hass
-        self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_tts"
+    def __init__(self, entry: MistralConfigEntry) -> None:
+        super().__init__(entry, "tts")
         # The account's voices, from GET /v1/audio/voices. None means "not
         # fetched yet"; the picker then shows no voices. There is no static
         # fallback: only voices that really exist on the account are offered.
@@ -179,7 +165,7 @@ class MistralTTSEntity(TextToSpeechEntity):
 
     async def async_will_remove_from_hass(self) -> None:
         """Unregister so the refresh button never talks to a removed entity."""
-        runtime = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id)
+        runtime = getattr(self._entry, "runtime_data", None)
         if runtime is not None and runtime.tts_entity is self:
             runtime.tts_entity = None
         await super().async_will_remove_from_hass()
@@ -195,14 +181,6 @@ class MistralTTSEntity(TextToSpeechEntity):
             return False
         self._voice_cache = voices
         return True
-
-    @property
-    def _runtime(self):
-        return self.hass.data[DOMAIN][self._entry.entry_id]
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return tts_device_info(self._entry)
 
     @property
     def default_language(self) -> str:
@@ -250,17 +228,7 @@ class MistralTTSEntity(TextToSpeechEntity):
 
         try:
             while True:
-                async with mistral_request(
-                    self.hass,
-                    self._entry,
-                    "get",
-                    f"{MISTRAL_API_BASE}/audio/voices",
-                    params={"limit": limit, "offset": offset},
-                    timeout=10,
-                    # A failed fetch is not fatal: the last good list stays.
-                    log_level=logging.WARNING,
-                ) as resp:
-                    data = await read_json(resp)
+                data = await self._runtime.client.list_voices(offset, limit)
 
                 items = data.get("items") or []
                 all_items.extend(items)
@@ -310,14 +278,8 @@ class MistralTTSEntity(TextToSpeechEntity):
             "response_format": "mp3",
         }
 
-        async with mistral_request(
-            self.hass,
-            self._entry,
-            "post",
-            f"{MISTRAL_API_BASE}/audio/speech",
-            json=payload,
-            timeout=30,
-            log_context=f"voice={voice}",
+        async with self._runtime.client.speech(
+            payload, voice=voice, timeout=30
         ) as resp:
             # Mistral returns JSON with base64-encoded MP3 in audio_data
             data = await read_json(resp)
@@ -569,14 +531,8 @@ class MistralTTSEntity(TextToSpeechEntity):
         header_done = False
         request_start = time.monotonic()
         first_chunk_logged = False
-        async with mistral_request(
-            self.hass,
-            self._entry,
-            "post",
-            f"{MISTRAL_API_BASE}/audio/speech",
-            json=payload,
-            timeout=60,
-            log_context=f"voice={voice}",
+        async with self._runtime.client.speech(
+            payload, voice=voice, timeout=60
         ) as resp:
             async for audio in translate_stream(iter_sse_audio_chunks(resp)):
                 if not first_chunk_logged:

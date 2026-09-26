@@ -18,20 +18,21 @@ from homeassistant.components.stt import (
     SpeechResultState,
     SpeechToTextEntity,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._api import describe_error, mistral_request, read_json
+from . import MistralConfigEntry
+from .api import describe_error, read_json
 from .const import (
-    DOMAIN,
-    MISTRAL_API_BASE,
     STT_MODEL,
 )
+from .entity import STT_DEVICE, MistralEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# Cloud service: nothing polls, calls may run in parallel.
+PARALLEL_UPDATES = 0
 
 # BCP-47 code → display name (exposed via supported_languages so HA can
 # show a language picker in the Voice Assistants dialog). These are the 13
@@ -55,14 +56,14 @@ LANGUAGE_OPTIONS: list[tuple[str, str]] = [
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: MistralConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Voxtral STT entity."""
-    async_add_entities([MistralSTTEntity(hass, config_entry)])
+    async_add_entities([MistralSTTEntity(config_entry)])
 
 
-class MistralSTTEntity(SpeechToTextEntity):
+class MistralSTTEntity(MistralEntity, SpeechToTextEntity):
     """Mistral AI / Voxtral speech-to-text — separate device from conversation entity.
 
     Language selection is handled entirely by the HA Voice Assistants dialog
@@ -74,25 +75,11 @@ class MistralSTTEntity(SpeechToTextEntity):
     empty), Voxtral uses automatic language detection.
     """
 
-    _attr_has_entity_name = True
+    _device = STT_DEVICE
     _attr_name = "Mistral AI STT (Voxtral)"
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        self.hass = hass
-        self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_stt"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Separate device from the conversation entity."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._entry.entry_id}_stt")},
-            name="Mistral AI STT",
-            manufacturer="Mistral AI",
-            model=STT_MODEL,
-            entry_type=DeviceEntryType.SERVICE,
-            configuration_url="https://docs.mistral.ai/capabilities/audio_transcription",
-        )
+    def __init__(self, entry: MistralConfigEntry) -> None:
+        super().__init__(entry, "stt")
 
     @property
     def supported_languages(self) -> list[str]:
@@ -158,8 +145,6 @@ class MistralSTTEntity(SpeechToTextEntity):
             sample_width=int(metadata.bit_rate) // 8,
         )
 
-        runtime = self.hass.data[DOMAIN][self._entry.entry_id]
-
         def build_form() -> aiohttp.FormData:
             # A FormData can only be sent once, so a 429 retry needs a new one.
             form = aiohttp.FormData()
@@ -175,17 +160,8 @@ class MistralSTTEntity(SpeechToTextEntity):
             return form
 
         try:
-            # Use only the Authorization header for multipart (no Content-Type override)
-            auth_header = {"Authorization": runtime.headers["Authorization"]}
-            async with mistral_request(
-                self.hass,
-                self._entry,
-                "post",
-                f"{MISTRAL_API_BASE}/audio/transcriptions",
-                headers=auth_header,
-                data_factory=build_form,
-                timeout=60,
-            ) as resp:
+            # Multipart: the client sends only the Authorization header.
+            async with self._client.transcribe(build_form) as resp:
                 result = await read_json(resp)
 
         except HomeAssistantError as err:

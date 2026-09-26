@@ -8,8 +8,6 @@ existing config entry is ignored.
 No real Home Assistant and no network: the HTTP session is a fake that records
 the payload of the speech request.
 """
-# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
-# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import base64
@@ -19,11 +17,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
+from custom_components.mistral_conversation import const
+from custom_components.mistral_conversation import tts as tts_module
+from custom_components.mistral_conversation.const import DEFAULT_TTS_VOICE
 
-from mistral_conversation import const
-from mistral_conversation import tts as tts_module
-from mistral_conversation.const import DEFAULT_TTS_VOICE, DOMAIN
+from .helpers import attach_runtime, with_hass
 
 COMPONENT = Path(__file__).resolve().parent.parent / "custom_components" / "mistral_conversation"
 LEFTOVER_VOICE = "fr_marie_neutral"  # what an old config entry may still hold
@@ -56,10 +54,9 @@ class _FakeSession:
 
 
 def _make_entity(options=None, session=None) -> tts_module.MistralTTSEntity:
-    runtime = SimpleNamespace(session=session, headers={})
-    hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
     entry = SimpleNamespace(entry_id="entry1", options=options or {})
-    return tts_module.MistralTTSEntity(hass, entry)
+    attach_runtime(entry, session)
+    return with_hass(tts_module.MistralTTSEntity(entry), SimpleNamespace(data={}))
 
 
 class DefaultOptionsTests(unittest.TestCase):

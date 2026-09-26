@@ -15,6 +15,13 @@
         "data": {
           "api_key": "Clé API"
         }
+      },
+      "reconfigure": {
+        "title": "Modifier la clé API Mistral AI",
+        "description": "Saisissez une nouvelle clé API. L'intégration redémarre avec cette clé ; vos paramètres restent inchangés.",
+        "data": {
+          "api_key": "Clé API"
+        }
       }
     },
     "error": {
@@ -24,15 +31,25 @@
     },
     "abort": {
       "already_configured": "Mistral AI Conversation est déjà configuré.",
-      "reauth_successful": "Ré-identification effectuée."
+      "reauth_successful": "Ré-identification effectuée.",
+      "reconfigure_successful": "La clé API a été modifiée."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Paramètres de Mistral AI Conversation",
+        "description": "Choisissez d'abord le modèle. L'étape suivante affiche les paramètres de ce modèle ; la recherche web n'est proposée que pour les modèles qui la prennent en charge (Mistral Small, Medium et Large).",
         "data": {
-          "model": "Modèle d'IA",
+          "model": "Modèle d'IA"
+        },
+        "data_description": {
+          "model": "Quel modèle Mistral utiliser. Ministral-8b est recommandé pour les commandes de domotique : rapide, économique et excellent pour le suivi d'instructions. Ministral-14b est nouveau (déc. 2025) et le plus performant des petits modèles « edge ». Remarque : avec une clé API gratuite/Experiment, ce sont surtout les modèles plus coûteux (Medium, Large) qui risquent le plus d'être limités en débit — voir la note pour chaque modèle ci-dessous."
+        }
+      },
+      "settings": {
+        "title": "Paramètres pour ce modèle",
+        "data": {
           "prompt": "Prompt système",
           "llm_hass_api": "Contrôler Home Assistant",
           "temperature": "Température (créativité)",
@@ -43,7 +60,6 @@
           "tts_mode": "Mode de synthèse vocale (TTS)"
         },
         "data_description": {
-          "model": "Quel modèle Mistral utiliser. Ministral-8b est recommandé pour les commandes de domotique : rapide, économique et excellent pour le suivi d'instructions. Ministral-14b est nouveau (déc. 2025) et le plus performant des petits modèles « edge ». Remarque : avec une clé API gratuite/Experiment, ce sont surtout les modèles plus coûteux (Medium, Large) qui risquent le plus d'être limités en débit — voir la note pour chaque modèle ci-dessous.",
           "prompt": "Instructions pour l'IA. Supporte les modèles Jinja2 — par exemple, le nom de l'instance HA via ha_name, ou la date actuelle via now(). Voir le README pour la liste complète des variables.",
           "llm_hass_api": "Sélectionnez quelles APIs Home Assistant l'IA peut utiliser pour contrôler vos périphériques. 'Assist' présente les mêmes entités que l'assistant vocal inclus dans HA.",
           "temperature": "0 = déterministe, 1 = créatif. Plage de Mistral : 0.0–1.0.",
@@ -117,6 +133,19 @@
     },
     "invalid_response": {
       "message": "Mistral a renvoyé une réponse illisible."
+    }
+  },
+  "issues": {
+    "model_retired": {
+      "title": "Le modèle Mistral {model} n'est plus disponible",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Passer à {replacement} ?",
+            "description": "Mistral ne propose plus le modèle {model}, l'assistant ne peut donc plus répondre. Sélectionnez Valider pour passer à {replacement}. Vous pourrez choisir un autre modèle plus tard dans les options de l'intégration."
+          }
+        }
+      }
     }
   }
 }

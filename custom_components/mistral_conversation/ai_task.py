@@ -14,15 +14,14 @@ from homeassistant.components.ai_task import (
     GenDataTask,
     GenDataTaskResult,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-from ._api import mistral_error, mistral_request, translate_stream
+from . import MistralConfigEntry
+from .api import mistral_error, translate_stream
 from .const import (
     CONF_MAX_TOKENS,
     CONF_MODEL,
@@ -30,8 +29,6 @@ from .const import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_TEMPERATURE,
-    DOMAIN,
-    MISTRAL_API_BASE,
 )
 from .conversation import (
     _async_stream_delta,
@@ -39,17 +36,21 @@ from .conversation import (
     _sanitize,
     _schema_to_openapi,
 )
+from .entity import CONVERSATION_DEVICE, MistralEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# Cloud service: nothing polls, calls may run in parallel.
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: MistralConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Mistral AI task entity."""
-    async_add_entities([MistralAITaskEntity(hass, config_entry)])
+    async_add_entities([MistralAITaskEntity(config_entry)])
 
 
 def _parse_structured(structure: Any, response_text: str) -> Any:
@@ -80,35 +81,20 @@ def _parse_structured(structure: Any, response_text: str) -> Any:
     return parsed
 
 
-class MistralAITaskEntity(AITaskEntity):
+class MistralAITaskEntity(MistralEntity, AITaskEntity):
     """Mistral AI task entity."""
 
-    _attr_has_entity_name = True
+    _device = CONVERSATION_DEVICE
     _attr_name = None
     _attr_supported_features = (
         AITaskEntityFeature.GENERATE_DATA | AITaskEntityFeature.SUPPORT_ATTACHMENTS
     )
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        self.hass = hass
-        self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_ai_task"
+    def __init__(self, entry: MistralConfigEntry) -> None:
+        super().__init__(entry, "ai_task")
 
-    @property
-    def _runtime(self):
-        return self.hass.data[DOMAIN][self._entry.entry_id]
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        model = self._entry.options.get(CONF_MODEL, DEFAULT_MODEL)
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"{self._entry.entry_id}_conversation")},
-            name="Mistral AI Conversation",
-            manufacturer="Mistral AI",
-            model=model,
-            entry_type=DeviceEntryType.SERVICE,
-            configuration_url="https://console.mistral.ai",
-        )
+    def _device_model(self) -> str:
+        return self._entry.options.get(CONF_MODEL, DEFAULT_MODEL)
 
     async def _read_attachment(self, path: Path, mime_type: str) -> dict[str, Any]:
         data = await self.hass.async_add_executor_job(path.read_bytes)
@@ -222,10 +208,10 @@ class MistralAITaskEntity(AITaskEntity):
                     prop["description"] = key.description
                 properties[name] = prop
 
-            result: dict[str, Any] = {"type": "object", "properties": properties}
+            schema: dict[str, Any] = {"type": "object", "properties": properties}
             if required:
-                result["required"] = required
-            return _sanitize(result)
+                schema["required"] = required
+            return _sanitize(schema)
         except Exception as err:  # noqa: BLE001 - HA selector shapes vary; log and fall back rather than crash
             _LOGGER.warning("Could not build JSON schema from HA selectors: %s", err)
             return None
@@ -267,14 +253,8 @@ class MistralAITaskEntity(AITaskEntity):
         if response_format:
             payload["response_format"] = response_format
 
-        async with mistral_request(
-            self.hass,
-            self._entry,
-            "post",
-            f"{MISTRAL_API_BASE}/chat/completions",
-            json=payload,
-            timeout=90,
-            log_context=f"model={model}",
+        async with self._runtime.client.chat_completions(
+            payload, source="ai_task"
         ) as resp:
             async for _ in chat_log.async_add_delta_content_stream(
                 self.entity_id,

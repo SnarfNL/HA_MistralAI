@@ -2,20 +2,34 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
-import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_track_time_interval
 
-from ._api import describe_error
+from ._models import (
+    MODEL_CHECK_INTERVAL,
+    async_check_model,
+    async_clear_stale_issue,
+)
 from ._web_search import WebSearchConversations
-from .const import DOMAIN, MISTRAL_API_BASE
+from .api import MistralClient
+from .const import (
+    CONF_MODEL,
+    CONF_WEB_SEARCH,
+    DEFAULT_MODEL,
+    DEFAULT_WEB_SEARCH,
+    DOMAIN,
+    supports_web_search,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,8 +42,9 @@ PLATFORMS = ["ai_task", "button", "conversation", "stt", "tts"]
 class MistralRuntimeData:
     """Shared runtime data for a config entry."""
 
-    session: aiohttp.ClientSession
-    headers: dict[str, str]
+    client: MistralClient
+    # The last errors from calls to Mistral, for the diagnostics file.
+    errors: deque[dict[str, Any]]
     # HA conversation -> Mistral conversation, for follow-ups on the direct
     # web-search route. Bounded and expiring.
     web_search_convs: WebSearchConversations = field(
@@ -38,55 +53,75 @@ class MistralRuntimeData:
     # The TTS entity, registered while it is loaded so the refresh-voices
     # button can reach it.
     tts_entity: Any | None = field(default=None)
+    # Last successful GET /v1/models result; None until fetched.
+    models: list[dict[str, Any]] | None = field(default=None)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+type MistralConfigEntry = ConfigEntry[MistralRuntimeData]
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> bool:
     """Set up Mistral AI Conversation from a config entry."""
     api_key = entry.data[CONF_API_KEY]
     session = async_get_clientsession(hass)
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
 
-    try:
-        async with session.get(
-            f"{MISTRAL_API_BASE}/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=aiohttp.ClientTimeout(total=10),
-        ) as resp:
-            if resp.status == 401:
-                raise ConfigEntryAuthFailed("Invalid Mistral AI API key")
-            resp.raise_for_status()
-    except (aiohttp.ClientError, TimeoutError) as err:
-        # Never repr() an aiohttp error: it would include the API key header.
-        raise ConfigEntryNotReady(
-            f"Cannot connect to Mistral AI: {describe_error(err)}"
-        ) from err
+    error, detail = await MistralClient.validate_key(session, api_key)
+    if error == "invalid_auth":
+        raise ConfigEntryAuthFailed("Invalid Mistral AI API key")
+    if error:
+        raise ConfigEntryNotReady(f"Cannot connect to Mistral AI: {detail}")
 
-    runtime = MistralRuntimeData(session=session, headers=headers)
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
+    _async_fix_web_search(hass, entry)
+    async_clear_stale_issue(hass, entry)
+
+    errors: deque[dict[str, Any]] = deque(maxlen=10)
+    entry.runtime_data = MistralRuntimeData(
+        client=MistralClient(hass, entry, session, api_key, errors), errors=errors
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
+    # Retired-model check (MA-14): in the background so startup is not
+    # delayed, then once a day.
+    entry.async_create_background_task(
+        hass, async_check_model(hass, entry), "mistral_check_model"
+    )
+
+    async def _periodic_model_check(_now: datetime) -> None:
+        await async_check_model(hass, entry)
+
+    entry.async_on_unload(
+        async_track_time_interval(hass, _periodic_model_check, MODEL_CHECK_INTERVAL)
+    )
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+def _async_fix_web_search(hass: HomeAssistant, entry: MistralConfigEntry) -> None:
+    """Turn web search off when the saved model cannot use it (MA-30).
+
+    Runs before the update listener is registered, so this write does not
+    trigger a reload.
+    """
+    model = entry.options.get(CONF_MODEL, DEFAULT_MODEL)
+    web_search = entry.options.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH)
+    if web_search and not supports_web_search(model):
+        _LOGGER.warning("Web search turned off: model %s does not support it", model)
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, CONF_WEB_SEARCH: False}
+        )
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> bool:
     """Unload a config entry.
 
-    Order matters: platforms must be unloaded *before* the runtime data is
-    cleared, so entities can complete their teardown (closing streams,
-    cancelling pipelined TTS tasks, etc.) using ``self._runtime`` while it
-    still exists. Clearing first races with in-flight ``async_stream_tts_audio``
-    iterations that resolve ``self._runtime`` lazily on each chunk.
+    HA drops ``entry.runtime_data`` only after the platforms have unloaded, so
+    entities can finish their teardown (closing streams, cancelling pipelined
+    TTS tasks) with the client still available.
     """
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
-    return unload_ok
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_reload_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> None:
     """Reload entry when options change."""
     await hass.config_entries.async_reload(entry.entry_id)

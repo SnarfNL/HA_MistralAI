@@ -1,0 +1,8 @@
+data: {"id":"cmpl-fixture","object":"chat.completion.chunk","model":"ministral-8b-latest","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"cmpl-fixture","object":"chat.completion.chunk","model":"ministral-8b-latest","choices":[{"index":0,"delta":{"content":"Het is 21 graden"},"finish_reason":null}]}
+
+data: {"id":"cmpl-fixture","object":"chat.completion.chunk","model":"ministral-8b-latest","choices":[{"index":0,"delta":{"content":" in de woonkamer."},"finish_reason":"stop"}]}
+
+data: [DONE]
+

@@ -1,0 +1,5 @@
+pytest-homeassistant-custom-component==0.13.285
+# HA 2025.10 ships aiodns 3.x, which breaks with pycares 5 (no ares_query_a_result).
+pycares<5
+pytest-cov
+ruff

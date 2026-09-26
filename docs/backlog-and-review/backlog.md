@@ -201,7 +201,7 @@ Als beheerder wil ik dat `ai_task.generate_data` met een `structure` altijd een 
 ## MA-10 · Refactor naar HA-patronen
 
 Labels: `backlog` `type:tech` `priority:should` `release:2-ha-native` `effort:M`
-Status: open
+Status: in PR (release 2 bundle)
 
 Als maintainer wil ik één plek voor API-calls en gedeelde entity-logica, zodat een API-wijziging op één plek wordt opgelost.
 
@@ -220,7 +220,7 @@ Als maintainer wil ik één plek voor API-calls en gedeelde entity-logica, zodat
 ## MA-11 · Tests op echte HA-code
 
 Labels: `backlog` `type:tech` `priority:should` `release:2-ha-native` `effort:M`
-Status: open
+Status: in PR (release 2 bundle)
 
 Als maintainer wil ik tests die tegen echte HA-klassen draaien, zodat breuken door HA-releases (zoals probatio in 2026.9) in CI opvallen.
 
@@ -282,7 +282,7 @@ The voice is chosen only in the assistant settings (or via the `voice` option of
 ## MA-14 · Diagnostics, repairs en reconfigure
 
 Labels: `backlog` `type:feature` `priority:should` `release:2-ha-native` `effort:M`
-Status: open
+Status: in PR (release 2 bundle)
 
 Als beheerder wil ik bij problemen een diagnostics-bestand kunnen delen en een melding krijgen als mijn model door Mistral is uitgefaseerd.
 
@@ -542,3 +542,39 @@ Status: open
 Als maintainer wil ik op termijn kunnen kiezen voor opname in Home Assistant core.
 
 **Toelichting:** pas zinvol na MA-08, MA-10 en MA-11. Vereist een losse PyPI-library, strict typing en minimaal Silver op de Quality Scale.
+
+---
+
+## MA-30 · Web search option follows the selected model
+
+Labels: `backlog` `type:improvement` `priority:should` `release:2-ha-native` `effort:S`
+Status: in PR (release 2 bundle) · GitHub #81
+
+As an administrator, I want the web search option to match the model I pick, so I never have web search switched on while it silently does nothing.
+
+**Acceptance criteria**
+
+- [ ] With a model that cannot do web search, the web search options are unavailable in the options flow, and web search is saved as off.
+- [ ] Switching to a model that can do web search turns web search on by default; a manual "off" is kept.
+- [ ] An existing entry with web search on and an unsupported model is corrected at startup, with one log line.
+- [ ] One shared capability helper.
+- [ ] Texts in `strings.json` and `en`, `nl`, `fr`; tests for all of the above.
+
+**Estimate:** Claude 30–45 min + test 15 min · ≈ 0.5–1 M tokens
+
+---
+
+## MA-31 · mypy --strict
+
+Labels: `backlog` `type:tech` `priority:could` `release:2-ha-native` `effort:M`
+Status: open · GitHub #82
+
+As a maintainer, I want the integration to pass `mypy --strict`, so type errors are caught before they reach users. Split off from MA-10, which added plain `mypy` to CI.
+
+**Acceptance criteria**
+
+- [ ] `mypy --strict` passes on `custom_components/mistral_conversation`.
+- [ ] CI runs it on the latest HA leg.
+- [ ] No `# type: ignore` without an error code and a reason.
+
+**Estimate:** Claude 1–2 h + test 15 min · ≈ 1–3 M tokens

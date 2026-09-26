@@ -1,36 +1,34 @@
-"""Tests for ``_api.py``: shared request and error handling (MA-03, MA-07).
+"""Tests for ``api.py``: the Mistral client, shared request and error handling (MA-03, MA-07).
 
 No real Home Assistant and no network: the HTTP session is a fake that serves
-queued responses or raises queued exceptions, and ``_api._sleep`` is patched
+queued responses or raises queued exceptions, and ``api._sleep`` is patched
 so retries are instant and their waits can be checked.
 """
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import json
 import logging
 import unittest
+from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 import aiohttp
-
 from homeassistant.exceptions import HomeAssistantError
-from mistral_conversation import _api
-from mistral_conversation._api import (
+
+from custom_components.mistral_conversation import api
+from custom_components.mistral_conversation.api import (
     MAX_RETRY_AFTER,
+    MistralClient,
     async_spoken_error,
     describe_error,
     is_unrecoverable,
     mistral_error,
-    mistral_request,
     read_json,
     translate_stream,
 )
-from mistral_conversation.const import DOMAIN
+from custom_components.mistral_conversation.const import DOMAIN
 
 COMPONENT = Path(__file__).resolve().parent.parent / "custom_components" / "mistral_conversation"
 URL = "https://api.mistral.ai/v1/x"
@@ -72,9 +70,11 @@ class _Session:
     def __init__(self, *outcomes) -> None:
         self.outcomes = list(outcomes)
         self.calls: list[tuple[str, dict]] = []
+        self.urls: list[str] = []
 
     def request(self, method, url, **kwargs):
         self.calls.append((method, kwargs))
+        self.urls.append(url)
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, BaseException):
             raise outcome
@@ -82,22 +82,24 @@ class _Session:
 
 
 def _setup(*outcomes):
+    """A MistralClient around a fake session that serves *outcomes*."""
     session = _Session(*outcomes)
-    runtime = SimpleNamespace(session=session, headers={"Authorization": f"Bearer {API_KEY}"})
-    hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
     entry = SimpleNamespace(entry_id="entry1", async_start_reauth=MagicMock())
-    return hass, entry, session
+    client = MistralClient(SimpleNamespace(), entry, session, API_KEY, deque(maxlen=10))
+    return client, entry, session
 
 
 class MistralRequestTests(unittest.IsolatedAsyncioTestCase):
     async def _run(self, *outcomes, body=None, method="post", **kwargs):
         """Run one request; return (result, error, sleeps, entry, session)."""
-        hass, entry, session = _setup(*outcomes)
+        client, entry, session = _setup(*outcomes)
         sleep = AsyncMock()
         result = error = None
-        with patch.object(_api, "_sleep", sleep):
+        with patch.object(api, "_sleep", sleep):
             try:
-                async with mistral_request(hass, entry, method, URL, timeout=5, **kwargs) as resp:
+                async with client.request(
+                    method, "/x", timeout=5, source="test", **kwargs
+                ) as resp:
                     result = await resp.json()
                     if body is not None:
                         raise body
@@ -113,7 +115,8 @@ class MistralRequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sleeps, [])
         method, kwargs = session.calls[0]
         self.assertEqual(method, "POST")
-        self.assertEqual(kwargs["headers"], {"Authorization": f"Bearer {API_KEY}"})
+        self.assertEqual(kwargs["headers"]["Authorization"], f"Bearer {API_KEY}")
+        self.assertEqual(session.urls[0], URL)
 
     async def test_method_is_case_insensitive(self) -> None:
         _, error, _, _, session = await self._run(_Response(200), method="Delete")
@@ -165,7 +168,7 @@ class MistralRequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([kw["data"] for _, kw in session.calls], ["form-1", "form-2"])
 
     async def test_other_error_status_hides_the_body_and_logs_context(self) -> None:
-        with self.assertLogs(_api._LOGGER, "ERROR") as logs:
+        with self.assertLogs(api._LOGGER, "ERROR") as logs:
             _, error, _, _, _ = await self._run(
                 _Response(500, body="secret body"), log_context="model=m1"
             )
@@ -177,13 +180,13 @@ class MistralRequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("model=m1", output)
 
     async def test_log_level_can_be_lowered(self) -> None:
-        with self.assertLogs(_api._LOGGER, "DEBUG") as logs:
+        with self.assertLogs(api._LOGGER, "DEBUG") as logs:
             await self._run(_Response(500), log_level=logging.WARNING)
         self.assertTrue(any(line.startswith("WARNING") for line in logs.output))
         self.assertFalse(any(line.startswith("ERROR") for line in logs.output))
 
     async def test_unreadable_error_body_still_reports_the_status(self) -> None:
-        with self.assertLogs(_api._LOGGER, "ERROR"):
+        with self.assertLogs(api._LOGGER, "ERROR"):
             _, error, _, _, _ = await self._run(_Response(503, body=TimeoutError()))
         self.assertEqual(error.translation_key, "api_error")
         self.assertEqual(error.translation_placeholders, {"status": "503"})
@@ -219,14 +222,14 @@ class NoKeyInLogsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("502", text)
 
     async def test_failed_request_does_not_log_the_key(self) -> None:
-        hass, entry, _ = _setup(_LeakyError())
-        with self.assertLogs(_api._LOGGER, "DEBUG") as logs, self.assertRaises(HomeAssistantError):
-            async with mistral_request(hass, entry, "post", URL, timeout=5):
+        client, _, _ = _setup(_LeakyError())
+        with self.assertLogs(api._LOGGER, "DEBUG") as logs, self.assertRaises(HomeAssistantError):
+            async with client.request("post", "/x", timeout=5, source="test"):
                 pass
         self.assertNotIn(API_KEY, "".join(logs.output))
 
     async def test_failed_read_does_not_log_the_key(self) -> None:
-        with self.assertLogs(_api._LOGGER, "DEBUG") as logs, self.assertRaises(HomeAssistantError):
+        with self.assertLogs(api._LOGGER, "DEBUG") as logs, self.assertRaises(HomeAssistantError):
             await read_json(_Response(200, payload=_LeakyError()))
         self.assertNotIn(API_KEY, "".join(logs.output))
 
@@ -307,7 +310,7 @@ TABLE = {
 class SpokenErrorTests(unittest.IsolatedAsyncioTestCase):
     async def _spoken(self, err, language, table=TABLE):
         calls: list[str] = []
-        with patch.object(_api, "async_get_translations", _fake_translations(table, calls)):
+        with patch.object(api, "async_get_translations", _fake_translations(table, calls)):
             message = await async_spoken_error(None, err, language)
         self.assertEqual(len(calls), 1, "one translation lookup per error")
         return message
@@ -352,3 +355,104 @@ class StringsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# MistralClient (MA-10): request errors are recorded for diagnostics (MA-14)
+# ---------------------------------------------------------------------------
+
+
+def _client(session):
+    from collections import deque
+
+    from custom_components.mistral_conversation.api import MistralClient
+
+    hass = SimpleNamespace()
+    entry = SimpleNamespace(entry_id="entry1", async_start_reauth=MagicMock())
+    return MistralClient(hass, entry, session, API_KEY, deque(maxlen=10))
+
+
+async def test_client_records_rate_limit() -> None:
+    from custom_components.mistral_conversation import api
+
+    client = _client(_Session(_Response(429), _Response(429), _Response(429)))
+    with patch.object(api, "_sleep", AsyncMock()):
+        try:
+            async with client.request("get", "/models", timeout=5, source="setup"):
+                pass
+        except HomeAssistantError:
+            pass
+    [record] = client.errors
+    assert record["source"] == "setup"
+    assert record["status"] == 429
+    assert record["error"] == "rate_limited"
+    assert API_KEY not in str(record)
+
+
+async def test_client_records_network_error_without_status() -> None:
+    client = _client(_Session(aiohttp.ClientError("down")))
+    try:
+        async with client.request("get", "/models", timeout=5, source="stt"):
+            pass
+    except HomeAssistantError:
+        pass
+    [record] = client.errors
+    assert record == {**record, "source": "stt", "status": None, "error": "cannot_connect"}
+
+
+async def test_client_does_not_record_errors_from_caller_code() -> None:
+    client = _client(_Session(_Response(200)))
+    try:
+        async with client.request("get", "/models", timeout=5, source="conversation"):
+            raise ValueError("tool failed")
+    except ValueError:
+        pass
+    assert not client.errors
+
+
+async def test_client_uses_base_url_and_json_headers() -> None:
+    session = _Session(_Response(200))
+    client = _client(session)
+    async with client.request("post", "/chat/completions", timeout=5, source="x"):
+        pass
+    method, kwargs = session.calls[0]
+    assert method == "POST"
+    assert kwargs["headers"] == {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+async def test_client_multipart_sends_only_auth_header() -> None:
+    session = _Session(_Response(200))
+    client = _client(session)
+    async with client.request(
+        "post", "/audio/transcriptions", timeout=5, source="stt", multipart=True
+    ):
+        pass
+    _method, kwargs = session.calls[0]
+    assert kwargs["headers"] == {"Authorization": f"Bearer {API_KEY}"}
+
+
+async def test_client_list_models_tolerates_missing_data() -> None:
+    client = _client(_Session(_Response(200, payload={"object": "list"})))
+    assert await client.list_models() == []
+
+
+async def test_validate_key_results(hass, aioclient_mock) -> None:
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    from custom_components.mistral_conversation.api import MistralClient
+
+    session = async_get_clientsession(hass)
+    aioclient_mock.get("https://api.mistral.ai/v1/models", json={"data": []})
+    assert await MistralClient.validate_key(session, "k") == (None, "")
+    aioclient_mock.clear_requests()
+    aioclient_mock.get("https://api.mistral.ai/v1/models", status=401)
+    assert (await MistralClient.validate_key(session, "k"))[0] == "invalid_auth"
+    aioclient_mock.clear_requests()
+    aioclient_mock.get("https://api.mistral.ai/v1/models", status=503)
+    assert await MistralClient.validate_key(session, "k") == ("cannot_connect", "HTTP 503")
+    aioclient_mock.clear_requests()
+    aioclient_mock.get("https://api.mistral.ai/v1/models", exc=TimeoutError())
+    assert (await MistralClient.validate_key(session, "k"))[0] == "cannot_connect"

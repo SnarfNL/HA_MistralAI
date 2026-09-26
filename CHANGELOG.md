@@ -6,6 +6,12 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Added:** a diagnostics download (the integration's ⋮ menu → *Download diagnostics*) with the settings, versions and the last 10 errors. The API key is never in it. MA-14.
+- **Added:** a repair notification when Mistral retires the configured model, with a one-click switch to a suggested model (the `-latest` version of the same model, otherwise a model from the same family, otherwise the default). Checked at startup and once a day. MA-14.
+- **Added:** *Reconfigure* to change the API key without removing the integration. MA-14.
+- **Changed:** the options are now two steps: first the model, then the settings for that model. Web search is only shown for models that support it (Mistral Small, Medium, Large) and is switched on when you move to such a model; if you switch it off yourself, it stays off. MA-30.
+- **Changed:** an existing setup with web search on and a model that cannot use it gets web search switched off at startup, with one line in the log. The trigger phrases are kept. MA-30.
+- **Internal:** tests run on real Home Assistant (the minimum 2025.10 and the latest version) with coverage gates and mypy in CI; all Mistral calls go through one client and all entities share one base class. Device and entity IDs are unchanged. MA-11, MA-10.
 - **Fixed:** an error during Home Assistant startup could put the Mistral API key in the integration's error message and the log. Errors are now described without request headers.
 - **Fixed:** after a failed conversation turn, every later question in the same conversation failed with "Mistral returned an error (HTTP 400)". The failed turn is now replaced by the spoken error message, so the conversation continues normally.
 - **Fixed:** a timeout or network error in a Home Assistant tool (for example a script) was reported as "Mistral can't be reached". Only errors from Mistral itself are reported that way now.

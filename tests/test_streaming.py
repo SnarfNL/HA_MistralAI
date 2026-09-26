@@ -1,4 +1,4 @@
-"""Unit tests for ``mistral_conversation._streaming``.
+"""Unit tests for ``custom_components.mistral_conversation._streaming``.
 
 Run from the repo root::
 

@@ -4,19 +4,16 @@ Covered: ``_sanitize`` (recursive JSON-safe coercion), ``_to_mistral_id``
 (stable 9-char hex ID), and ``_async_stream_delta`` (SSE parser for
 chat-completions streaming responses).
 """
-# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
-# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import json
 import unittest
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
-from mistral_conversation.conversation import (
+from custom_components.mistral_conversation.conversation import (
     _async_stream_delta,
     _format_tool,
     _sanitize,
@@ -76,6 +73,17 @@ class _FakeTool:
         self.parameters = parameters
 
 
+def _fake_converters(convert: Any) -> Any:
+    """Point both schema converters (probatio, voluptuous_openapi) at *convert*."""
+    return patch.dict(
+        "sys.modules",
+        {
+            "probatio": SimpleNamespace(to_openapi=convert),
+            "voluptuous_openapi": SimpleNamespace(convert=convert),
+        },
+    )
+
+
 class FormatToolTests(unittest.TestCase):
     """``_format_tool`` must always return a JSON-serializable schema.
 
@@ -96,8 +104,7 @@ class FormatToolTests(unittest.TestCase):
     def test_unconvertible_schema_value_is_sanitized_not_left_raw(self) -> None:
         """Simulates convert() returning something that isn't a JSON schema.
 
-        ``voluptuous_openapi.convert`` is mocked out in this test environment
-        (see ``_ha_stubs``), so a bare call returns a ``MagicMock`` rather
+        The converter is replaced by one that returns a ``MagicMock`` rather
         than a real dict — standing in for any non-dict value a schema
         conversion could produce, including HA 2026.9's probatio/
         voluptuous_openapi sentinel mismatch, which replaces the *entire*
@@ -108,7 +115,8 @@ class FormatToolTests(unittest.TestCase):
         a valid, if empty, object schema instead.
         """
         tool = _FakeTool("broken_tool", "desc", parameters={})
-        result = _format_tool(tool)
+        with _fake_converters(MagicMock(return_value=MagicMock())):
+            result = _format_tool(tool)
         params = result["function"]["parameters"]
         self.assertEqual(params, {"type": "object", "properties": {}})
         json.dumps(result)
@@ -128,7 +136,7 @@ class FormatToolTests(unittest.TestCase):
         """
         tool = _FakeTool("basic-utilities__calculate", "Calculator", parameters={})
 
-        with patch("voluptuous_openapi.convert", return_value="UNSUPPORTED"):
+        with _fake_converters(MagicMock(return_value="UNSUPPORTED")):
             result = _format_tool(tool)
 
         self.assertEqual(

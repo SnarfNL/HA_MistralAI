@@ -8,8 +8,6 @@ header of the first sentence that really delivers audio, exactly once.
 No real Home Assistant and no network: the per-sentence HTTP call is replaced
 by a fake that writes a real 44-byte WAV header plus recognisable PCM bytes.
 """
-# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
-# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import asyncio
@@ -18,15 +16,15 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 from homeassistant.exceptions import HomeAssistantError
-from mistral_conversation import tts as tts_module
-from mistral_conversation.const import (
-    DOMAIN,
+
+from custom_components.mistral_conversation import tts as tts_module
+from custom_components.mistral_conversation.const import (
     TTS_INTER_SENTENCE_SILENCE_BYTES,
     TTS_WAV_HEADER_SIZE,
 )
+
+from .helpers import attach_runtime, with_hass
 
 
 def _wav_header(sample_rate: int = 24000, channels: int = 1, bits: int = 16) -> bytes:
@@ -60,11 +58,10 @@ async def _message_gen(*sentences: str):
         yield sentence + " "
 
 
-def _make_entity(runtime=None) -> tts_module.MistralTTSEntity:
-    runtime = runtime or SimpleNamespace(session=None, headers={})
-    hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
+def _make_entity(session=None) -> tts_module.MistralTTSEntity:
     entry = SimpleNamespace(entry_id="entry1", options={})
-    return tts_module.MistralTTSEntity(hass, entry)
+    attach_runtime(entry, session)
+    return with_hass(tts_module.MistralTTSEntity(entry), SimpleNamespace(data={}))
 
 
 def _fake_sentence(behaviour: dict[str, tuple]):
@@ -191,7 +188,7 @@ class HeaderSplitAcrossChunksTests(unittest.IsolatedAsyncioTestCase):
                 yield chunk
 
         session = SimpleNamespace(request=lambda *a, **k: _FakeResponse())
-        entity = _make_entity(SimpleNamespace(session=session, headers={}))
+        entity = _make_entity(session)
         queue: asyncio.Queue = asyncio.Queue()
         with patch.object(tts_module, "iter_sse_audio_chunks", fake_iter):
             await entity._stream_one_sentence_into("Some text here.", "v", queue)

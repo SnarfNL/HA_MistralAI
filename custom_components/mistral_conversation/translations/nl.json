@@ -15,6 +15,13 @@
         "data": {
           "api_key": "API-sleutel"
         }
+      },
+      "reconfigure": {
+        "title": "Mistral AI API-sleutel wijzigen",
+        "description": "Voer een nieuwe API-sleutel in. De integratie start opnieuw met deze sleutel; je instellingen blijven hetzelfde.",
+        "data": {
+          "api_key": "API-sleutel"
+        }
       }
     },
     "error": {
@@ -24,15 +31,25 @@
     },
     "abort": {
       "already_configured": "Mistral AI Conversation is al geconfigureerd.",
-      "reauth_successful": "Herverificatie geslaagd."
+      "reauth_successful": "Herverificatie geslaagd.",
+      "reconfigure_successful": "De API-sleutel is gewijzigd."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Mistral AI Conversation instellingen",
+        "description": "Kies eerst het model. De volgende stap toont de instellingen voor dat model; zoeken op het web is alleen beschikbaar bij modellen die dat ondersteunen (Mistral Small, Medium en Large).",
         "data": {
-          "model": "AI-model",
+          "model": "AI-model"
+        },
+        "data_description": {
+          "model": "Welk Mistral-model wordt gebruikt. Ministral-8b is aanbevolen voor home automation: snel, goedkoop en sterk in opdrachten uitvoeren. Ministral-14b is nieuw (dec. 2025) en het sterkste van de kleine edge-modellen. Let op: met een gratis/Experiment-API-key lopen vooral de duurdere modellen (Medium, Large) het snelst tegen rate limits aan — zie de opmerking per model hieronder."
+        }
+      },
+      "settings": {
+        "title": "Instellingen voor dit model",
+        "data": {
           "prompt": "Systeemprompt",
           "llm_hass_api": "Home Assistant bedienen",
           "temperature": "Temperature (creativiteit)",
@@ -43,7 +60,6 @@
           "tts_mode": "Tekst-naar-spraak modus"
         },
         "data_description": {
-          "model": "Welk Mistral-model wordt gebruikt. Ministral-8b is aanbevolen voor home automation: snel, goedkoop en sterk in opdrachten uitvoeren. Ministral-14b is nieuw (dec. 2025) en het sterkste van de kleine edge-modellen. Let op: met een gratis/Experiment-API-key lopen vooral de duurdere modellen (Medium, Large) het snelst tegen rate limits aan — zie de opmerking per model hieronder.",
           "prompt": "Instructies voor de AI. Ondersteunt Jinja2 templates — bijvoorbeeld de HA-instantienaam via ha_name, of de huidige datum via now(). Zie de README voor de volledige lijst met variabelen.",
           "llm_hass_api": "Selecteer welke Home Assistant API de AI mag gebruiken om apparaten te bedienen. 'Assist' stelt dezelfde entiteiten beschikbaar als de ingebouwde spraakassistent.",
           "temperature": "0 = deterministisch, 1 = creatief. Mistral bereik: 0.0–1.0.",
@@ -117,6 +133,19 @@
     },
     "invalid_response": {
       "message": "Mistral gaf een antwoord dat niet te lezen was."
+    }
+  },
+  "issues": {
+    "model_retired": {
+      "title": "Mistral-model {model} is niet meer beschikbaar",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Overschakelen naar {replacement}?",
+            "description": "Mistral biedt het model {model} niet meer aan, dus de assistent kan geen antwoord geven. Kies Verzenden om over te schakelen naar {replacement}. Je kunt later een ander model kiezen in de opties van de integratie."
+          }
+        }
+      }
     }
   }
 }

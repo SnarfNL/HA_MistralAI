@@ -10,8 +10,6 @@ Plus ``_web_search_tool_def`` (shape of the advertised tool) and the
 ``_convert_chat_log_to_messages`` guard that drops content-less assistant turns
 left behind by an intercepted call.
 """
-# ruff: noqa: I001 - import order below is intentional: `_ha_stubs` must run
-# before the `mistral_conversation` import so Home Assistant is stubbed first.
 from __future__ import annotations
 
 import unittest
@@ -20,10 +18,8 @@ from typing import Any
 
 from homeassistant.components import conversation as ha_conversation
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
-from mistral_conversation.const import WEB_SEARCH_TOOL_NAME
-from mistral_conversation.conversation import (
+from custom_components.mistral_conversation.const import WEB_SEARCH_TOOL_NAME
+from custom_components.mistral_conversation.conversation import (
     _convert_chat_log_to_messages,
     _filter_intercepted_tool,
     _resolve_trigger,
@@ -218,19 +214,13 @@ class _ChatLog:
 
 
 def _assistant(content: str | None, tool_calls: Any = None) -> Any:
-    obj = _Content(content=content, tool_calls=tool_calls)
-    obj.__class__ = type(
-        "AssistantContentStub", (ha_conversation.AssistantContent,), {}
+    return ha_conversation.AssistantContent(
+        agent_id="conversation.test", content=content, tool_calls=tool_calls
     )
-    obj.content = content
-    obj.tool_calls = tool_calls
-    return obj
 
 
 def _user(content: str) -> Any:
-    obj = ha_conversation.UserContent()
-    obj.content = content
-    return obj
+    return ha_conversation.UserContent(content=content)
 
 
 class ConvertChatLogEmptyAssistantTests(unittest.TestCase):

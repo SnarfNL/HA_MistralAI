@@ -9,16 +9,39 @@ permissions:
 
 jobs:
   tests:
-    name: Ruff and pytest
+    name: Tests (HA ${{ matrix.ha }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ha: "2025.10 (minimum)"
+            python: "3.13"
+            requirements: requirements_test_min.txt
+            latest: false
+          - ha: "2026.9 (latest)"
+            python: "3.14"
+            requirements: requirements_test.txt
+            latest: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python }}
       - name: Install dependencies
-        run: python -m pip install ruff pytest
+        run: |
+          python -m pip install -r ${{ matrix.requirements }}
+          python scripts/component_requirements.py > requirements_components.txt
+          python -m pip install -r requirements_components.txt
       - name: Ruff (lint)
         run: ruff check .
+      - name: Mypy
+        if: matrix.latest
+        run: mypy
       - name: Pytest
         run: pytest tests
+      - name: Coverage gates
+        if: matrix.latest
+        run: |
+          pytest --cov --cov-report=term-missing --cov-fail-under=90
+          coverage report --include="*/config_flow.py" --fail-under=100

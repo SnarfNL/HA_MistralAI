@@ -3,22 +3,21 @@ the config flow and STT (MA-03).
 
 No real Home Assistant and no network: sessions are fakes that raise.
 """
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 import aiohttp
-import mistral_conversation as init_module
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
-from mistral_conversation import ai_task as ai_task_module
-from mistral_conversation import config_flow as config_flow_module
-from mistral_conversation import stt as stt_module
-from mistral_conversation.const import DOMAIN
+
+import custom_components.mistral_conversation as init_module
+from custom_components.mistral_conversation import ai_task as ai_task_module
+from custom_components.mistral_conversation import config_flow as config_flow_module
+from custom_components.mistral_conversation import stt as stt_module
+
+from .helpers import attach_runtime, with_hass
 
 
 class _Invalid(Exception):
@@ -100,11 +99,9 @@ class SttTimeoutTests(unittest.IsolatedAsyncioTestCase):
         metadata = SimpleNamespace(language="nl", sample_rate=16000, channel=1, bit_rate=16)
         for failure in FAILURES:
             with self.subTest(failure=repr(failure)):
-                runtime = SimpleNamespace(
-                    session=_RaisingSession(failure), headers={"Authorization": "Bearer k"}
-                )
-                hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
-                entity = stt_module.MistralSTTEntity(hass, SimpleNamespace(entry_id="entry1"))
+                entry = SimpleNamespace(entry_id="entry1")
+                attach_runtime(entry, _RaisingSession(failure))
+                entity = with_hass(stt_module.MistralSTTEntity(entry), SimpleNamespace(data={}))
                 with (
                     patch.object(stt_module, "SpeechResult", lambda text, state: (text, state)),
                     patch.object(stt_module, "SpeechResultState", SimpleNamespace(ERROR="error")),

@@ -1,2 +1,4 @@
 **/__pycache__/
 **/.env
+requirements_components.txt
+.coverage

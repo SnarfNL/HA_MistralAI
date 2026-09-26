@@ -1,0 +1,6 @@
+data: {"id":"cmpl-fixture","object":"chat.completion.chunk","model":"ministral-8b-latest","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"cmpl-fixture","object":"chat.completion.chunk","model":"ministral-8b-latest","choices":[{"index":0,"delta":{"tool_calls":[{"id":"abc123xyz","index":0,"function":{"name":"HassTurnOn","arguments":"{\"name\": \"keukenlamp\"}"}}]},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+

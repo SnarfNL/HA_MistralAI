@@ -4,26 +4,25 @@ web-search answer landing in the chat log (MA-02).
 No real Home Assistant and no network: the chat log is a small fake that
 records the deltas it receives, and the Mistral calls are patched.
 """
-# ruff: noqa: I001 - `_ha_stubs` must run before the `mistral_conversation` import.
 from __future__ import annotations
 
 import unittest
 from types import MappingProxyType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from . import _ha_stubs  # noqa: F401  side-effect: install HA stubs
-
 from homeassistant.exceptions import HomeAssistantError
-from mistral_conversation import conversation as conv_module
-from mistral_conversation._api import mistral_error
-from mistral_conversation.const import (
+
+from custom_components.mistral_conversation import conversation as conv_module
+from custom_components.mistral_conversation.api import mistral_error
+from custom_components.mistral_conversation.const import (
     CONF_MODEL,
     CONF_WEB_SEARCH,
     CONF_WEB_SEARCH_MODE,
     CONF_WEB_SEARCH_TRIGGER,
-    DOMAIN,
     WEB_SEARCH_MODE_ALWAYS,
 )
+
+from .helpers import attach_runtime, with_hass
 
 
 class _ChatLog:
@@ -62,10 +61,10 @@ def _user_input(text: str = "search the weather") -> SimpleNamespace:
 
 
 def _entity(options: dict, session=None) -> conv_module.MistralConversationEntity:
-    runtime = SimpleNamespace(session=session, headers={})
-    hass = SimpleNamespace(data={DOMAIN: {"entry1": runtime}})
+    hass = SimpleNamespace(data={})
     entry = SimpleNamespace(entry_id="entry1", options=options, async_start_reauth=MagicMock())
-    return conv_module.MistralConversationEntity(hass, entry)
+    attach_runtime(entry, session)
+    return with_hass(conv_module.MistralConversationEntity(entry), hass)
 
 
 WEB_SEARCH_ALWAYS = {
@@ -150,9 +149,6 @@ class ConversationsParsingTests(unittest.IsolatedAsyncioTestCase):
 
     async def _reply(self, data) -> str:
         entity = _entity(WEB_SEARCH_ALWAYS)
-        entity.hass.data[DOMAIN]["entry1"].web_search_convs = MagicMock(
-            pop_expired=MagicMock(return_value=[]), get=MagicMock(return_value=None)
-        )
 
         class _Resp:
             status = 200
@@ -167,8 +163,11 @@ class ConversationsParsingTests(unittest.IsolatedAsyncioTestCase):
             async def json(self):
                 return data
 
-        entity.hass.data[DOMAIN]["entry1"].session = SimpleNamespace(
-            request=lambda *a, **k: _Resp()
+        runtime = attach_runtime(
+            entity._entry, SimpleNamespace(request=lambda *a, **k: _Resp())
+        )
+        runtime.web_search_convs = MagicMock(
+            pop_expired=MagicMock(return_value=[]), get=MagicMock(return_value=None)
         )
         return await entity._conversations_chat(
             model="mistral-small-latest", user_text="q", language="nl", conv_id=None
