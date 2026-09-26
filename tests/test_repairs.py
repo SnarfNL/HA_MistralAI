@@ -157,3 +157,66 @@ async def test_fix_flow_for_a_removed_entry_just_closes(
     flow.hass = hass
     result = await flow.async_step_confirm({})
     assert result["type"] == "create_entry"
+
+
+def _models_then_rate_limited():
+    """/models answers once (the key check), then only 429 (the model check)."""
+    calls = {"n": 0}
+
+    async def respond(method, url, data):
+        from pytest_homeassistant_custom_component.test_util.aiohttp import (
+            AiohttpClientMockResponse,
+        )
+
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return AiohttpClientMockResponse(method, url, text=load_fixture("models.json"))
+        return AiohttpClientMockResponse(
+            method, url, status=429, headers={"Retry-After": "0"}
+        )
+
+    return respond
+
+
+async def _stale_issue(hass, entry, aioclient_mock) -> None:
+    """Issue raised for a retired model, then the user picks a valid model
+    while the model check after the reload is rate-limited."""
+    await _set_model(hass, entry, "open-mistral-nemo")
+    assert _issue(hass, entry) is not None
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{BASE}/audio/voices", text=load_fixture("voices.json"))
+    aioclient_mock.get(f"{BASE}/models", side_effect=_models_then_rate_limited())
+    await _set_model(hass, entry, "mistral-large-latest")
+
+
+async def test_stale_issue_is_cleared_after_a_manual_model_change(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    entry = setup_integration
+    await _stale_issue(hass, entry, aioclient_mock)
+    assert entry.options["model"] == "mistral-large-latest"
+    assert _issue(hass, entry) is None
+
+
+async def test_stale_fix_flow_never_overwrites_a_manual_model_choice(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    from custom_components.mistral_conversation.repairs import async_create_fix_flow
+
+    entry = setup_integration
+    await _set_model(hass, entry, "mistral-large-latest")
+    flow = await async_create_fix_flow(
+        hass,
+        issue_id(entry.entry_id),
+        {
+            "entry_id": entry.entry_id,
+            "model": "open-mistral-nemo",
+            "replacement": "ministral-8b-latest",
+        },
+    )
+    flow.hass = hass
+    result = await flow.async_step_init()
+    assert result["type"] == "create_entry"
+    assert entry.options["model"] == "mistral-large-latest"

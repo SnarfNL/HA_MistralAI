@@ -314,3 +314,44 @@ async def test_manual_off_on_supported_model_is_kept(
     await _set_options(hass, entry, model="mistral-small-latest", web_search=False)
     result = await _options(hass, entry, "mistral-large-latest")
     assert _default(result, "web_search") is False
+
+
+async def test_reconfigure_reloads_once(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """One reload: a second one would repeat the key check, which a free-tier
+    key can fail with a rate limit right after a successful reconfigure."""
+    entry = setup_integration
+    aioclient_mock.mock_calls.clear()
+    result = await _start_reconfigure(hass, entry)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-new"}
+    )
+    await hass.async_block_till_done()
+    assert result["reason"] == "reconfigure_successful"
+    model_calls = [c for c in aioclient_mock.mock_calls if str(c[1]).endswith("/models")]
+    # New key check + one reload (key check + background model check).
+    assert len(model_calls) == 3
+    assert entry.state is config_entries.ConfigEntryState.LOADED
+
+
+async def test_reconfigure_not_loaded_entry_reloads(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """An entry that failed to set up gets the new key and one setup attempt."""
+    from homeassistant.setup import async_setup_component
+
+    assert await async_setup_component(hass, "homeassistant", {})
+    aioclient_mock.get(f"{BASE}/models", text='{"data": []}')
+    aioclient_mock.get(f"{BASE}/audio/voices", text='{"items": [], "total": 0}')
+    result = await _start_reconfigure(hass, mock_config_entry)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-new"}
+    )
+    await hass.async_block_till_done()
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_config_entry.data["api_key"] == "sk-new"

@@ -15,7 +15,11 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
 
-from ._models import MODEL_CHECK_INTERVAL, async_check_model
+from ._models import (
+    MODEL_CHECK_INTERVAL,
+    async_check_model,
+    async_clear_stale_issue,
+)
 from ._web_search import WebSearchConversations
 from .api import MistralClient
 from .const import (
@@ -68,6 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> b
         raise ConfigEntryNotReady(f"Cannot connect to Mistral AI: {detail}")
 
     _async_fix_web_search(hass, entry)
+    async_clear_stale_issue(hass, entry)
 
     errors: deque[dict[str, Any]] = deque(maxlen=10)
     entry.runtime_data = MistralRuntimeData(

@@ -56,6 +56,20 @@ def suggest_replacement(model: str, models: list[dict[str, Any]]) -> str:
     return DEFAULT_MODEL
 
 
+def async_clear_stale_issue(hass: HomeAssistant, entry: MistralConfigEntry) -> None:
+    """Delete the retired-model issue if it is about another model than now.
+
+    The user may have picked a new model by hand while the next model check
+    could not run (a rate-limited /models call leaves the issue as it was).
+    """
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id(entry.entry_id))
+    if issue is None:
+        return
+    model = entry.options.get(CONF_MODEL, DEFAULT_MODEL)
+    if (issue.data or {}).get("model") != model:
+        ir.async_delete_issue(hass, DOMAIN, issue_id(entry.entry_id))
+
+
 async def async_check_model(hass: HomeAssistant, entry: MistralConfigEntry) -> None:
     """Raise or clear the ``model_retired`` repair issue. Never raises itself.
 
@@ -85,5 +99,5 @@ async def async_check_model(hass: HomeAssistant, entry: MistralConfigEntry) -> N
         severity=ir.IssueSeverity.WARNING,
         translation_key="model_retired",
         translation_placeholders={"model": model, "replacement": replacement},
-        data={"entry_id": entry.entry_id, "replacement": replacement},
+        data={"entry_id": entry.entry_id, "model": model, "replacement": replacement},
     )

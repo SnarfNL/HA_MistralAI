@@ -116,10 +116,19 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if error:
                 errors["base"] = error
             else:
-                return self.async_update_reload_and_abort(
-                    self._get_reconfigure_entry(),
-                    data_updates={CONF_API_KEY: user_input[CONF_API_KEY]},
+                entry = self._get_reconfigure_entry()
+                data_updates = {CONF_API_KEY: user_input[CONF_API_KEY]}
+                if entry.state is not config_entries.ConfigEntryState.LOADED:
+                    return self.async_update_reload_and_abort(
+                        entry, data_updates=data_updates
+                    )
+                # A loaded entry reloads through its update listener; letting
+                # async_update_reload_and_abort reload as well would repeat the
+                # key check, which a free-tier key can fail with a rate limit.
+                self.hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, **data_updates}
                 )
+                return self.async_abort(reason="reconfigure_successful")
 
         return self.async_show_form(
             step_id="reconfigure", data_schema=API_KEY_SCHEMA, errors=errors
