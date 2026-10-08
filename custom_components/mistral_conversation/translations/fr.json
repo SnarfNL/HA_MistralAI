@@ -41,7 +41,8 @@
         "title": "Paramètres de Mistral AI Conversation",
         "description": "Choisissez d'abord le modèle. L'étape suivante affiche les paramètres de ce modèle ; la recherche web n'est proposée que pour les modèles qui la prennent en charge (Mistral Small, Medium et Large).",
         "data": {
-          "model": "Modèle d'IA"
+          "model": "Modèle d'IA",
+          "api_base": "Point de terminaison API"
         },
         "data_description": {
           "model": "Quel modèle Mistral utiliser. Ministral-8b est recommandé pour les commandes de domotique : rapide, économique et excellent pour le suivi d'instructions. Ministral-14b est nouveau (déc. 2025) et le plus performant des petits modèles « edge ». Remarque : avec une clé API gratuite/Experiment, ce sont surtout les modèles plus coûteux (Medium, Large) qui risquent le plus d'être limités en débit — voir la note pour chaque modèle ci-dessous."
@@ -57,7 +58,8 @@
           "web_search": "Activer la recherche sur le web (Beta)",
           "web_search_mode": "Routage de la recherche web",
           "web_search_trigger": "Phrases déclencheurs de recherche web (facultatif)",
-          "tts_mode": "Mode de synthèse vocale (TTS)"
+          "tts_mode": "Mode de synthèse vocale (TTS)",
+          "api_base": "Région de l'API Mistral"
         },
         "data_description": {
           "prompt": "Instructions pour l'IA. Supporte les modèles Jinja2 — par exemple, le nom de l'instance HA via ha_name, ou la date actuelle via now(). Voir le README pour la liste complète des variables.",
@@ -77,6 +79,13 @@
       "options": {
         "stream": "Streaming",
         "batch": "Batch"
+      }
+    },
+    "api_base": {
+      "options": {
+        "global": "Monde (api.mistral.ai)",
+        "europe": "Europe (api.eu.mistral.ai)",
+        "us": "États-Unis (api.us.mistral.ai)"
       }
     },
     "web_search_mode": {

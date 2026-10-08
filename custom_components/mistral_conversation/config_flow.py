@@ -12,7 +12,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import MistralClient
 from .const import (
+    API_BASES,
     CHAT_MODELS,
+    CONF_API_BASE,
     CONF_MAX_TOKENS,
     CONF_MODEL,
     CONF_PROMPT,
@@ -161,6 +163,7 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         self._model: str = DEFAULT_MODEL
+        self._api_base: str = API_BASES[0]
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -168,6 +171,7 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
         """Step 1: the model."""
         if user_input is not None:
             self._model = user_input[CONF_MODEL]
+            self._api_base = user_input.get(CONF_API_BASE, API_BASES[0])
             return await self.async_step_settings()
 
         opts = self.config_entry.options
@@ -175,6 +179,16 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    vol.Optional(
+                        CONF_API_BASE,
+                        default=opts.get(CONF_API_BASE, API_BASES[0]),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=API_BASES,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            translation_key="api_base",
+                        )
+                    ),
                     vol.Optional(
                         CONF_MODEL,
                         default=opts.get(CONF_MODEL, DEFAULT_MODEL),
@@ -194,13 +208,14 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.ConfigFlowResult:
         """Step 2: everything else; web search only for a supporting model."""
         opts = self.config_entry.options
+        self._api_base = opts.get(CONF_API_BASE, API_BASES[0])
         capable = supports_web_search(self._model)
 
         if user_input is not None:
             # Clean up empty LLM API selection
             if not user_input.get(CONF_LLM_HASS_API):
                 user_input.pop(CONF_LLM_HASS_API, None)
-            data = {**user_input, CONF_MODEL: self._model}
+            data = {**user_input, CONF_MODEL: self._model, CONF_API_BASE: self._api_base}
             if not capable:
                 # Saved as off. Mode and trigger phrases keep their values, so
                 # they come back when a supporting model is chosen again.

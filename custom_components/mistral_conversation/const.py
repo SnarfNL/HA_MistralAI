@@ -13,6 +13,7 @@ CONF_WEB_SEARCH = "web_search"
 CONF_WEB_SEARCH_MODE = "web_search_mode"
 CONF_WEB_SEARCH_TRIGGER = "web_search_trigger"
 CONF_TTS_MODE = "tts_mode"
+CONF_API_BASE = "api_base"
 # Note: device control uses HA's native CONF_LLM_HASS_API from homeassistant.const
 
 # tts_mode values
@@ -154,6 +155,19 @@ TTS_INTER_SENTENCE_SILENCE_BYTES = 14_400
 # API
 # ---------------------------------------------------------------------------
 MISTRAL_API_BASE = "https://api.mistral.ai/v1"
+# Available regional endpoints for Mistral API
+API_BASES = [
+    "global",
+    "europe",
+    "us",
+]
+
+# Mapping from option key to actual base URL
+API_BASE_URLS = {
+    "global": "https://api.mistral.ai/v1",
+    "europe": "https://api.eu.mistral.ai/v1",
+    "us": "https://api.us.mistral.ai/v1",
+}
 
 # Max tool-call round-trips to prevent infinite loops
 MAX_TOOL_ITERATIONS = 10

@@ -23,6 +23,7 @@ from ._models import (
 from ._web_search import WebSearchConversations
 from .api import MistralClient
 from .const import (
+    CONF_API_BASE,
     CONF_MODEL,
     CONF_WEB_SEARCH,
     DEFAULT_MODEL,
@@ -63,9 +64,10 @@ type MistralConfigEntry = ConfigEntry[MistralRuntimeData]
 async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> bool:
     """Set up Mistral AI Conversation from a config entry."""
     api_key = entry.data[CONF_API_KEY]
+    api_base = getattr(entry, "options", {}).get(CONF_API_BASE)
     session = async_get_clientsession(hass)
 
-    error, detail = await MistralClient.validate_key(session, api_key)
+    error, detail = await MistralClient.validate_key(session, api_key, api_base)
     if error == "invalid_auth":
         raise ConfigEntryAuthFailed("Invalid Mistral AI API key")
     if error:
@@ -76,7 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> b
 
     errors: deque[dict[str, Any]] = deque(maxlen=10)
     entry.runtime_data = MistralRuntimeData(
-        client=MistralClient(hass, entry, session, api_key, errors), errors=errors
+        client=MistralClient(hass, entry, session, api_key, errors, api_base), errors=errors
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -16,6 +16,8 @@ def attach_runtime(entry: Any, session: Any = None, **fields: Any) -> MistralRun
     """Give a stand-in config entry real runtime data around a fake *session*."""
     if not hasattr(entry, "async_start_reauth"):
         entry.async_start_reauth = MagicMock()
+    if not hasattr(entry, "options"):
+        entry.options = {}
     errors: deque[dict[str, Any]] = deque(maxlen=10)
     runtime = MistralRuntimeData(
         client=MistralClient(SimpleNamespace(), entry, session, API_KEY, errors),

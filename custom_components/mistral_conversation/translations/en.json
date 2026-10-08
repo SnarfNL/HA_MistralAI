@@ -41,7 +41,8 @@
         "title": "Mistral AI Conversation settings",
         "description": "Choose the model first. The next step shows the settings for that model; web search is only offered for models that support it (Mistral Small, Medium and Large).",
         "data": {
-          "model": "AI model"
+          "model": "AI model",
+          "api_base": "API endpoint"
         },
         "data_description": {
           "model": "Which Mistral model to use. Ministral-8b is recommended for home automation commands: fast, cost-effective and great at instruction-following. Ministral-14b is new (Dec 2025) and the strongest of the small edge models. Note: on a free/Experiment-tier API key, the pricier models (Medium, Large) are the ones most likely to be rate-limited or rejected — see the note next to each model below."
@@ -57,7 +58,8 @@
           "web_search": "Enable web search (Beta)",
           "web_search_mode": "Web search routing",
           "web_search_trigger": "Web search trigger phrases (optional)",
-          "tts_mode": "Text-to-speech mode"
+          "tts_mode": "Text-to-speech mode",
+          "api_base": "Mistral API endpoint region"
         },
         "data_description": {
           "prompt": "Instructions for the AI. Supports Jinja2 templates — for example, the HA instance name via ha_name, or the current date via now(). See the README for the full list of variables.",
@@ -77,6 +79,13 @@
       "options": {
         "stream": "Streaming",
         "batch": "Batch"
+      }
+    },
+    "api_base": {
+      "options": {
+        "global": "Global (api.mistral.ai)",
+        "europe": "Europe (api.eu.mistral.ai)",
+        "us": "United States (api.us.mistral.ai)"
       }
     },
     "web_search_mode": {
