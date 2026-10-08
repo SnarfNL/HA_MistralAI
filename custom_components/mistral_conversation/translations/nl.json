@@ -41,7 +41,8 @@
         "title": "Mistral AI Conversation instellingen",
         "description": "Kies eerst het model. De volgende stap toont de instellingen voor dat model; zoeken op het web is alleen beschikbaar bij modellen die dat ondersteunen (Mistral Small, Medium en Large).",
         "data": {
-          "model": "AI-model"
+          "model": "AI-model",
+          "api_base": "API-endpoint"
         },
         "data_description": {
           "model": "Welk Mistral-model wordt gebruikt. Ministral-8b is aanbevolen voor home automation: snel, goedkoop en sterk in opdrachten uitvoeren. Ministral-14b is nieuw (dec. 2025) en het sterkste van de kleine edge-modellen. Let op: met een gratis/Experiment-API-key lopen vooral de duurdere modellen (Medium, Large) het snelst tegen rate limits aan — zie de opmerking per model hieronder."
@@ -57,7 +58,8 @@
           "web_search": "Webzoeken inschakelen (Beta)",
           "web_search_mode": "Webzoeken-routering",
           "web_search_trigger": "Triggerwoorden voor webzoeken (optioneel)",
-          "tts_mode": "Tekst-naar-spraak modus"
+          "tts_mode": "Tekst-naar-spraak modus",
+          "api_base": "Mistral API-endpoint regio"
         },
         "data_description": {
           "prompt": "Instructies voor de AI. Ondersteunt Jinja2 templates — bijvoorbeeld de HA-instantienaam via ha_name, of de huidige datum via now(). Zie de README voor de volledige lijst met variabelen.",
@@ -77,6 +79,13 @@
       "options": {
         "stream": "Streaming",
         "batch": "Batch"
+      }
+    },
+    "api_base": {
+      "options": {
+        "global": "Wereldwijd (api.mistral.ai)",
+        "europe": "Europa (api.eu.mistral.ai)",
+        "us": "Verenigde Staten (api.us.mistral.ai)"
       }
     },
     "web_search_mode": {

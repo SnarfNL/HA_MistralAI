@@ -148,6 +148,7 @@ class MistralClient:
         session: aiohttp.ClientSession,
         api_key: str,
         errors: deque[dict[str, Any]],
+        api_base: str | None = None,
     ) -> None:
         self._hass = hass
         self._entry = entry
@@ -155,6 +156,8 @@ class MistralClient:
         self._auth = {"Authorization": f"Bearer {api_key}"}
         self._json_headers = {**self._auth, "Content-Type": "application/json"}
         self.errors = errors
+        from .const import API_BASE_URLS
+        self._base = API_BASE_URLS.get(api_base, MISTRAL_API_BASE) if api_base else MISTRAL_API_BASE
 
     def record(
         self, source: str, err: BaseException, status: int | None = None
@@ -239,7 +242,7 @@ class MistralClient:
         (e.g. the model or voice) is added to the log line of an error
         status; *log_level* is the level of that line and of network failures.
         """
-        url = f"{MISTRAL_API_BASE}{path}"
+        url = f"{self._base}{path}"
         headers = self._auth if multipart else self._json_headers
         status: int | None = None
         try:
@@ -367,16 +370,18 @@ class MistralClient:
 
     @staticmethod
     async def validate_key(
-        session: aiohttp.ClientSession, api_key: str
+        session: aiohttp.ClientSession, api_key: str, api_base: str | None = None
     ) -> tuple[str | None, str]:
         """Check an API key before an entry (or its client) exists.
 
         Returns ``(None, "")`` when valid, else ``("invalid_auth" |
         "cannot_connect", detail)``; the detail never contains the key.
         """
+        from .const import API_BASE_URLS
+        base = API_BASE_URLS.get(api_base, MISTRAL_API_BASE) if api_base else MISTRAL_API_BASE
         try:
             async with session.get(
-                f"{MISTRAL_API_BASE}/models",
+                f"{base}/models",
                 headers={"Authorization": f"Bearer {api_key}"},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
