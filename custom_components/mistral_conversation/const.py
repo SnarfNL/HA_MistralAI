@@ -114,17 +114,17 @@ def supports_web_search(model: str) -> bool:
 # ---------------------------------------------------------------------------
 # STT
 # ---------------------------------------------------------------------------
-STT_MODEL = "voxtral-mini-latest"
+# Explicit Voxtral 3 IDs: older aliases can still resolve to Voxtral 2.
+STT_MODEL = "voxtral-mini-transcribe-3-0"
 
 # ---------------------------------------------------------------------------
 # TTS
 # ---------------------------------------------------------------------------
-TTS_MODEL = "voxtral-mini-tts-2603"
+TTS_MODEL = "voxtral-mini-tts-3-0"
 
-# Languages Voxtral TTS supports, per the Mistral docs. This is about the words
-# the model knows, not about accents: the preset voices speak every one of these
-# languages, but with their own accent. The voices themselves come from the
-# account (see _voices.py and MistralTTSEntity.async_refresh_voices).
+# Preserve the existing TTS language choices. Voices have their own accents;
+# the account's presets and custom voices are fetched separately (see
+# _voices.py and MistralTTSEntity.async_refresh_voices).
 TTS_LANGUAGES = ["en", "fr", "es", "pt", "it", "nl", "de", "hi", "ar"]
 
 # --- Streaming ----------------------------------------------------------

@@ -347,7 +347,10 @@ async def test_reconfigure_not_loaded_entry_reloads(
 
     assert await async_setup_component(hass, "homeassistant", {})
     aioclient_mock.get(f"{BASE}/models", text='{"data": []}')
-    aioclient_mock.get(f"{BASE}/audio/voices", text='{"items": [], "total": 0}')
+    aioclient_mock.get(
+        "https://api.mistral.ai/v2/audio/voices",
+        json={"data": [], "next_page_token": None},
+    )
     result = await _start_reconfigure(hass, mock_config_entry)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"api_key": "sk-new"}

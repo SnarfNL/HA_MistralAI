@@ -70,7 +70,7 @@ Write it in English, with: the problem, what changed (plain language, no jargon)
 - Tool schemas: HA 2026.9+ uses `probatio`. Use `_schema_to_openapi()` (probatio first, voluptuous_openapi fallback, always returns a dict).
 - Mistral's built-in `web_search` tool is rejected by `/v1/chat/completions`; it only works via the Agents/Conversations API. That is why web search is a synthetic function tool serviced by the integration.
 - STT language comes from `metadata.language` (the voice pipeline), not from an integration option.
-- `GET /v1/audio/voices` is paginated (`limit`/`offset`); synthesis uses the voice `id` (UUID), the picker shows `name`.
+- `GET /v2/audio/voices` uses cursor pagination (`page_size`/`page_token`, following `next_page_token`). Synthesis uses the voice `id` (UUID); preset slugs also work. Voice labels use `type`, `slug` and `languages`, and language matches are listed first without hiding other voices.
 - Streaming TTS is WAV 24 kHz / 16-bit / mono; per-sentence requests are stitched into one stream (one RIFF header, then raw PCM).
 
 ## Planning and vocabulary

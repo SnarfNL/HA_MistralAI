@@ -85,7 +85,9 @@ async def _setup_with_options(hass, entry, aioclient_mock, **options) -> None:
     hass.config_entries.async_update_entry(entry, options=options)
     assert await async_setup_component(hass, "homeassistant", {})
     aioclient_mock.get(f"{BASE}/models", text=load_fixture("models.json"))
-    aioclient_mock.get(f"{BASE}/audio/voices", text=load_fixture("voices.json"))
+    aioclient_mock.get(
+        "https://api.mistral.ai/v2/audio/voices", text=load_fixture("voices.json")
+    )
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 

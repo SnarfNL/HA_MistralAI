@@ -301,14 +301,19 @@ A `stt.mistral_ai_stt_voxtral` entity is registered automatically.
 
 | Property | Value |
 |---|---|
-| Model | `voxtral-mini-latest` |
+| Model | Voxtral Mini Transcribe 3 (`voxtral-mini-transcribe-3-0`) |
 | Supported format | WAV (16-bit, 16 kHz, mono PCM) |
-| Languages | 13: Arabic, Chinese, Dutch, English, French, German, Hindi, Italian, Japanese, Korean, Portuguese, Russian, Spanish (auto-detect when none is chosen) |
-| Pricing | ~$0.003 per minute |
+| Languages offered in HA | Arabic, Chinese, Dutch, English, French, German, Hindi, Italian, Japanese, Korean, Portuguese, Russian, Spanish (auto-detect when none is chosen) |
+| Pricing | See [Mistral's current pricing](https://docs.mistral.ai/inference/pricing) |
 
 ### Setting STT language
 
 Choose the language in **Settings → Voice assistants** (Speech-to-text language) for best accuracy. If none is chosen, Voxtral detects the language automatically.
+
+The existing language choices are preserved. Voxtral 3 supports more languages;
+see [Mistral's language documentation](https://docs.mistral.ai/studio/audio/specs-and-limits/languages).
+STT uploads the completed recording as a WAV file to `/v1/audio/transcriptions`;
+it does not open a realtime WebSocket session.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -325,7 +330,7 @@ Selectable via **Settings → Devices & Services → Mistral AI Conversation →
 
 | Mode | Behaviour | First audio | Best for |
 |---|---|---|---|
-| **Streaming** *(default)* | Server-Sent Events with chunked WAV. Sentences are extracted from the LLM token stream and dispatched to Mistral in parallel (up to 5 concurrent), with audio reassembled in strict order. | ~0.5–1 s | HA Voice satellites (Voice PE, ESPHome) |
+| **Streaming** *(default)* | Server-Sent Events with chunked WAV. Sentences are extracted from the LLM token stream and dispatched to Mistral in parallel (up to 2 concurrent), with audio reassembled in strict order. | Depends on the model and network | HA Voice satellites (Voice PE, ESPHome) |
 | **Batch** | Single non-streaming POST returns the full MP3 in a JSON body before any audio is yielded. | After full synthesis (~3–5 s for long replies) | Direct `tts.speak` service calls; environments where chunked HTTP is problematic |
 
 > **Note:** Direct `tts.speak` service calls always use the batch path regardless of this setting (the service expects a single audio file, not a stream).
@@ -334,26 +339,59 @@ Selectable via **Settings → Devices & Services → Mistral AI Conversation →
 
 | Property | Value |
 |---|---|
-| Model | `voxtral-mini-tts-2603` |
+| Model | Voxtral TTS 3 (`voxtral-mini-tts-3-0`) |
 | Stream container | WAV (24 kHz, 16-bit, mono PCM) |
 | Batch container | MP3 (base64-wrapped JSON response) |
-| Languages | 9: Arabic, Dutch, English, French, German, Hindi, Italian, Portuguese, Spanish |
-| Voices | The voices of your Mistral account: the presets (Paul, Jane, Oliver, Marie, each with emotion variants) and any custom voices you make in Mistral Studio |
+| Languages offered in HA | Arabic, Dutch, English, French, German, Hindi, Italian, Portuguese, Spanish |
+| Voices | Your account's Voxtral 3 presets, older presets (Paul, Jane, Oliver, Marie), and custom voices from Mistral Studio |
 
 ### Selecting a voice
 
 Choose the voice in **Settings → Voice assistants** (Text-to-speech voice), or pass `voice` in a `tts.speak` call. Without a voice, `en_paul_neutral` is used. The integration options have no voice setting.
 
-The picker lists the voices of your Mistral account, including custom voices from Mistral Studio. After you create a new voice, press the **Refresh voices** button on the **Mistral AI TTS** device (Settings → Devices & services → Mistral AI → Mistral AI TTS) and it appears in the picker without restarting Home Assistant. If the list is empty, Home Assistant could not reach Mistral when it loaded; check the log and press the button again.
+The picker lists the voices of your Mistral account, including custom voices from Mistral Studio. It fetches all pages from the current `/v2/audio/voices` API using `page_size` and `page_token`. After you create a new voice, press the **Refresh voices** button on the **Mistral AI TTS** device (Settings → Devices & services → Mistral AI → Mistral AI TTS) and it appears in the picker without restarting Home Assistant. A failed refresh keeps the previous list. If the list is empty, Home Assistant could not reach Mistral when it loaded; check the log and press the button again.
+
+Voices matching the assistant's language come first, with custom voices before
+presets within each group. All other voices remain available, including custom
+voices without language metadata. Regional codes such as `nl-NL` match `nl`.
+Older presets use labels such as `Paul – Neutral (English)`, while new presets
+show their name and language, such as `Lotte (Dutch)`.
 
 ### Languages and accents
 
-The 9 languages are the ones the model knows the words of. The preset voices speak all of them, but with their own accent (for example, Dutch text read by `Paul – Neutral (English)` has an English accent). For a native accent, create a custom voice in Mistral Studio, or use another TTS provider in your voice assistant. 
+The integration keeps its existing nine language choices. Voices have their own accents (for example, Dutch text read by `Paul – Neutral (English)` has an English accent). For a native accent, choose a matching Voxtral 3 preset, such as Lotte for Dutch, or create a custom voice in Mistral Studio. See [Mistral's voice library](https://docs.mistral.ai/studio/audio/text-to-speech/voices).
+
+### Upgrading to Voxtral 3
+
+STT and both TTS modes use explicit Voxtral 3 model IDs. Your API key must have
+access to the Voxtral 3 models. No additional Python
+SDK is required: the integration uses Home Assistant's shared HTTP session and
+the [Mistral REST API](https://docs.mistral.ai/api).
+
+Existing voice selections and the default `en_paul_neutral` continue to work;
+Mistral still accepts the older preset voices. Refresh the voice list to see the
+new presets. See [Mistral's migration guide](https://docs.mistral.ai/studio/audio/migrate-from-voxtral-2).
+
+After updating and restarting Home Assistant:
+
+1. Use Assist to transcribe a spoken command with your usual STT language.
+2. Refresh the voices, select a Voxtral 3 preset, and listen to an Assist reply
+   in **Streaming** mode. Try a reply with more than one sentence.
+3. Call `tts.speak` and check that the complete message plays. Also check a voice
+   you selected before the upgrade.
+4. Switch to **Batch** mode and check another Assist reply.
 
 <p align=right>(<a href=#readme-top>back to top</a>)</p>
 ---
 
 ## FAQ
+
+**Q: STT or TTS fails after upgrading to Voxtral 3.**
+A: Check the Home Assistant log for the HTTP status and model or voice involved,
+and confirm that your Mistral API key has access to `voxtral-mini-transcribe-3-0`
+and `voxtral-mini-tts-3-0`. The integration does not automatically fall back to
+Voxtral 2. If voice loading failed, press **Refresh voices** after resolving the
+connection or account access issue.
 
 **Q: The integration does not appear in the Voice Assistants dropdown.**
 A: Make sure you performed a full restart (not just reload) and cleared any `__pycache__` directories.

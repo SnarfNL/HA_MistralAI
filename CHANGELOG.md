@@ -6,6 +6,8 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Changed:** speech recognition and both speech generation modes now use Voxtral 3 explicitly. The voice picker uses Mistral's current cursor-paginated `/v2/audio/voices` API, including new presets and existing custom voices; existing voice selections are preserved.
+- **Fixed:** voice labels use preset slugs and language metadata instead of guessing from their names. Voices matching the assistant's language come first, with custom voices before presets within each group; all other voices remain available.
 - **Added:** a diagnostics download (the integration's ⋮ menu → *Download diagnostics*) with the settings, versions and the last 10 errors. The API key is never in it. MA-14.
 - **Added:** a repair notification when Mistral retires the configured model, with a one-click switch to a suggested model (the `-latest` version of the same model, otherwise a model from the same family, otherwise the default). Checked at startup and once a day. MA-14.
 - **Added:** *Reconfigure* to change the API key without removing the integration. MA-14.
