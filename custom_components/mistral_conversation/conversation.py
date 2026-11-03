@@ -26,6 +26,7 @@ from .api import (
     async_spoken_error,
     describe_error,
     is_unrecoverable,
+    mistral_error,
     read_json,
     translate_stream,
 )
@@ -602,11 +603,10 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
                     # its own retries); report it now instead of waiting twice.
                     if is_unrecoverable(err):
                         raise
-                    _LOGGER.warning(
-                        "Web search failed, falling back to chat completions: %s",
-                        describe_error(err),
-                    )
-                    ws_reply = None
+                    # The user asked for a search: say it failed instead of
+                    # answering from memory.
+                    _LOGGER.warning("Web search failed: %s", describe_error(err))
+                    raise mistral_error("web_search_unavailable") from err
 
                 if ws_reply:
                     # Add the answer to the chat log like any other reply, so
@@ -669,6 +669,7 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
             if captured_searches:
                 query = captured_searches[0]
                 _LOGGER.debug("Model requested web search: %s", query)
+                results: str | None
                 try:
                     results = await self._conversations_chat(
                         model=model,
@@ -682,20 +683,24 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
                     if is_unrecoverable(err):
                         raise
                     _LOGGER.warning(
-                        "Web search lookup failed, the model answers without it: %s",
-                        describe_error(err),
+                        "Web search lookup failed: %s", describe_error(err)
                     )
-                    results = ""
+                    results = None
 
-                injected.append({
-                    "role": "user",
-                    "content": (
+                if results is None:
+                    content = (
+                        f'The web search for "{query}" is unavailable right now. '
+                        "Tell me briefly that you could not look this up. "
+                        "Do not answer the question from memory."
+                    )
+                else:
+                    content = (
                         f'Web search results for "{query}":\n'
                         f"{results or 'No results were returned.'}\n\n"
                         "Using these results, answer my original question directly. "
                         "Do not mention that you performed a search."
-                    ),
-                })
+                    )
+                injected.append({"role": "user", "content": content})
                 # Withdraw the tool so a turn can trigger at most one search and
                 # cannot loop on it.
                 tools = [

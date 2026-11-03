@@ -133,6 +133,9 @@
     },
     "invalid_response": {
       "message": "Mistral a renvoyé une réponse illisible."
+    },
+    "web_search_unavailable": {
+      "message": "La recherche sur le web n'est pas disponible pour le moment. Réessayez dans un instant."
     }
   },
   "issues": {

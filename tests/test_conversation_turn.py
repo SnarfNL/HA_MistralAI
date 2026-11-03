@@ -116,16 +116,19 @@ class NoDoubleRetryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(ctx.exception.translation_key, key)
                 stream.assert_not_awaited()
 
-    async def test_direct_route_still_falls_back_on_other_errors(self) -> None:
+    async def test_direct_route_does_not_answer_from_memory_on_other_errors(self) -> None:
+        """The user asked for a search: a failed one is spoken, not hidden (#88)."""
         entity = _entity(WEB_SEARCH_ALWAYS)
         stream = AsyncMock()
         with (
             patch.object(entity, "_conversations_chat", AsyncMock(side_effect=mistral_error("cannot_connect"))),
             patch.object(entity, "_stream_and_collect", stream),
             patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
+            self.assertRaises(HomeAssistantError) as ctx,
         ):
             await entity._async_converse(_user_input("weather"), _ChatLog())
-        stream.assert_awaited_once()
+        self.assertEqual(ctx.exception.translation_key, "web_search_unavailable")
+        stream.assert_not_awaited()
 
     async def test_model_requested_search_does_not_retry_on_unrecoverable_errors(self) -> None:
         entity = _entity(WEB_SEARCH_BY_MODEL)
@@ -262,6 +265,7 @@ class SearchVisibilityTests(unittest.IsolatedAsyncioTestCase):
             patch.object(entity, "_stream_and_collect", AsyncMock()),
             patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
             self.assertLogs(self.LOGGER, "WARNING") as logs,
+            self.assertRaises(HomeAssistantError),
         ):
             await entity._async_converse(_user_input("weather"), _ChatLog())
         self.assertIn("Web search failed", logs.output[0])
@@ -281,6 +285,49 @@ class SearchVisibilityTests(unittest.IsolatedAsyncioTestCase):
         ):
             await entity._async_converse(_user_input("what's the weather?"), _ChatLog())
         self.assertIn("Web search lookup failed", logs.output[0])
+
+
+class ModelSearchMessageTests(unittest.IsolatedAsyncioTestCase):
+    """What the model is told after it asked for a web search (#88)."""
+
+    async def _second_round_messages(self, search_result) -> list[dict]:
+        entity = _entity(WEB_SEARCH_BY_MODEL)
+        payloads: list[dict] = []
+
+        async def model_asks_for_search(payload, chat_log, user_input, *, intercept_tool, intercepted):
+            payloads.append(payload)
+            if intercept_tool:
+                intercepted.append("weather amsterdam")
+
+        chat_search = AsyncMock(side_effect=search_result)
+        with (
+            patch.object(entity, "_conversations_chat", chat_search),
+            patch.object(entity, "_stream_and_collect", AsyncMock(side_effect=model_asks_for_search)),
+            patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
+        ):
+            await entity._async_converse(_user_input("what's the weather?"), _ChatLog())
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(chat_search.await_count, 1)  # at most one search per turn
+        self.assertNotIn("tools", payloads[1])  # the search tool is withdrawn
+        return payloads[1]["messages"]
+
+    async def test_failed_search_tells_the_model_not_to_answer_from_memory(self) -> None:
+        messages = await self._second_round_messages(mistral_error("cannot_connect"))
+        text = messages[-1]["content"]
+        self.assertIn("unavailable", text)
+        self.assertIn("could not look this up", text)
+        self.assertIn("from memory", text)
+        self.assertNotIn("No results", text)
+
+    async def test_found_results_are_still_handed_to_the_model(self) -> None:
+        messages = await self._second_round_messages(["Sunny, 18 degrees."])
+        text = messages[-1]["content"]
+        self.assertIn("Sunny, 18 degrees.", text)
+        self.assertIn("answer my original question directly", text)
+
+    async def test_empty_results_still_say_no_results(self) -> None:
+        messages = await self._second_round_messages([""])
+        self.assertIn("No results were returned.", messages[-1]["content"])
 
 
 class SpokenErrorTests(unittest.IsolatedAsyncioTestCase):

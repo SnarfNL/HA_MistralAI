@@ -341,6 +341,7 @@ class StringsTests(unittest.TestCase):
     KEYS = (
         "invalid_auth", "rate_limited", "cannot_connect", "api_error", "invalid_response",
         "empty_response", "json_parse_error", "structure_mismatch", "unexpected_error",
+        "web_search_unavailable",
     )
 
     def test_every_error_key_exists_in_every_language(self) -> None:
