@@ -602,7 +602,7 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
                     # its own retries); report it now instead of waiting twice.
                     if is_unrecoverable(err):
                         raise
-                    _LOGGER.debug(
+                    _LOGGER.warning(
                         "Web search failed, falling back to chat completions: %s",
                         describe_error(err),
                     )
@@ -681,7 +681,10 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
                 except HomeAssistantError as err:
                     if is_unrecoverable(err):
                         raise
-                    _LOGGER.debug("Web search lookup failed: %s", describe_error(err))
+                    _LOGGER.warning(
+                        "Web search lookup failed, the model answers without it: %s",
+                        describe_error(err),
+                    )
                     results = ""
 
                 injected.append({
@@ -757,6 +760,7 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
 
         parts: list[str] = []
         outputs = data.get("outputs")
+        self._check_search_ran(data, outputs, model)
         for output in outputs if isinstance(outputs, list) else []:
             if not isinstance(output, dict) or output.get("type") == "tool.execution":
                 continue
@@ -769,6 +773,30 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
                         parts.append(chunk.get("text", ""))
         message = data.get("message")
         return "".join(parts).strip() or (message if isinstance(message, str) else "")
+
+    def _check_search_ran(self, data: dict[str, Any], outputs: Any, model: str) -> None:
+        """Warn when Mistral answered without running its web search (#88).
+
+        Only the log and the diagnostics are touched; the answer is unchanged.
+        """
+        searched = isinstance(outputs, list) and any(
+            isinstance(output, dict)
+            and output.get("type") == "tool.execution"
+            and output.get("name", "web_search") == "web_search"
+            for output in outputs
+        )
+        if not searched:
+            _LOGGER.warning(
+                "Mistral answered without running a web search (model=%s)", model
+            )
+            self._runtime.client.record_note("conversation", "web_search_not_run", 200)
+        usage = data.get("usage")
+        connectors = usage.get("connectors") if isinstance(usage, dict) else None
+        if isinstance(connectors, dict) and "web_search" in connectors:
+            _LOGGER.debug(
+                "Mistral web search calls billed for this answer: %s",
+                connectors["web_search"],
+            )
 
     def _delete_mistral_conversations(self, ids: list[str]) -> None:
         """Delete Mistral conversations in the background; failures are only logged."""

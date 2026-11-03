@@ -186,6 +186,103 @@ class ConversationsParsingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.translation_key, "invalid_response")
 
 
+class SearchVisibilityTests(unittest.IsolatedAsyncioTestCase):
+    """A failed or skipped web search shows up in the log and diagnostics (#88)."""
+
+    LOGGER = conv_module._LOGGER.name
+
+    async def _reply(self, data) -> tuple[str, conv_module.MistralConversationEntity]:
+        entity = _entity(WEB_SEARCH_ALWAYS)
+
+        class _Resp:
+            status = 200
+            headers = MappingProxyType({})
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return None
+
+            async def json(self):
+                return data
+
+        runtime = attach_runtime(
+            entity._entry, SimpleNamespace(request=lambda *a, **k: _Resp())
+        )
+        runtime.web_search_convs = MagicMock(
+            pop_expired=MagicMock(return_value=[]), get=MagicMock(return_value=None)
+        )
+        reply = await entity._conversations_chat(
+            model="mistral-small-latest", user_text="q", language="nl", conv_id=None
+        )
+        return reply, entity
+
+    async def test_answer_without_a_search_is_logged_and_recorded(self) -> None:
+        data = {"outputs": [{"type": "message.output", "content": "From memory."}]}
+        with self.assertLogs(self.LOGGER, "WARNING") as logs:
+            reply, entity = await self._reply(data)
+        self.assertEqual(reply, "From memory.")  # the answer is not changed
+        self.assertIn("without running a web search", logs.output[0])
+        (record,) = entity._runtime.errors
+        self.assertEqual(
+            (record["source"], record["status"], record["error"]),
+            ("conversation", 200, "web_search_not_run"),
+        )
+
+    async def test_answer_with_a_search_is_not_flagged(self) -> None:
+        data = {
+            "outputs": [
+                {"type": "tool.execution", "name": "web_search"},
+                {"type": "message.output", "content": "Sunny."},
+            ]
+        }
+        with self.assertNoLogs(self.LOGGER, "WARNING"):
+            reply, entity = await self._reply(data)
+        self.assertEqual(reply, "Sunny.")
+        self.assertEqual(len(entity._runtime.errors), 0)
+
+    async def test_non_list_outputs_count_as_no_search(self) -> None:
+        with self.assertLogs(self.LOGGER, "WARNING"):
+            await self._reply({"outputs": "junk"})
+
+    async def test_web_search_usage_is_logged_at_debug(self) -> None:
+        data = {
+            "outputs": [{"type": "tool.execution", "name": "web_search"}],
+            "usage": {"connectors": {"web_search": 1}},
+        }
+        with self.assertLogs(self.LOGGER, "DEBUG") as logs:
+            await self._reply(data)
+        self.assertTrue(any("calls billed" in line and "1" in line for line in logs.output))
+
+    async def test_failed_direct_search_is_logged_as_a_warning(self) -> None:
+        entity = _entity(WEB_SEARCH_ALWAYS)
+        with (
+            patch.object(entity, "_conversations_chat", AsyncMock(side_effect=mistral_error("cannot_connect"))),
+            patch.object(entity, "_stream_and_collect", AsyncMock()),
+            patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
+            self.assertLogs(self.LOGGER, "WARNING") as logs,
+        ):
+            await entity._async_converse(_user_input("weather"), _ChatLog())
+        self.assertIn("Web search failed", logs.output[0])
+
+    async def test_failed_model_search_is_logged_as_a_warning(self) -> None:
+        entity = _entity(WEB_SEARCH_BY_MODEL)
+
+        async def model_asks_for_search(payload, chat_log, user_input, *, intercept_tool, intercepted):
+            if intercept_tool:
+                intercepted.append("weather amsterdam")
+
+        with (
+            patch.object(entity, "_conversations_chat", AsyncMock(side_effect=mistral_error("cannot_connect"))),
+            patch.object(entity, "_stream_and_collect", AsyncMock(side_effect=model_asks_for_search)),
+            patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
+            self.assertLogs(self.LOGGER, "WARNING") as logs,
+        ):
+            await entity._async_converse(_user_input("what's the weather?"), _ChatLog())
+        self.assertIn("Web search lookup failed", logs.output[0])
+
+
 class SpokenErrorTests(unittest.IsolatedAsyncioTestCase):
     async def _spoken_turn(self, error: BaseException, chat_log: _ChatLog):
         entity = _entity({})
