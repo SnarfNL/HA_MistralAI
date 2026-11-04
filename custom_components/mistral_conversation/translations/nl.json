@@ -57,7 +57,8 @@
           "web_search": "Webzoeken inschakelen (Beta)",
           "web_search_mode": "Webzoeken-routering",
           "web_search_trigger": "Triggerwoorden voor webzoeken (optioneel)",
-          "tts_mode": "Tekst-naar-spraak modus"
+          "tts_mode": "Tekst-naar-spraak modus",
+          "tts_gain_db": "Volumeverhoging tekst-naar-spraak"
         },
         "data_description": {
           "prompt": "Instructies voor de AI. Ondersteunt Jinja2 templates — bijvoorbeeld de HA-instantienaam via ha_name, of de huidige datum via now(). Zie de README voor de volledige lijst met variabelen.",
@@ -67,7 +68,8 @@
           "web_search": "Als ingeschakeld kan de AI het web doorzoeken voor actuele informatie. Gebruikt Mistral's Conversations API (beta). Vereist een model dat agents ondersteunt (mistral-medium-latest of mistral-large-latest).",
           "web_search_mode": "'Laat het model beslissen' (aanbevolen): de AI zoekt alleen wanneer dat nodig is en kan in dezelfde opdracht nog steeds je apparaten bedienen. 'Altijd zoeken': elke opdracht gaat via de Conversations API — langzamer, en apparaatbesturing werkt dan niet.",
           "web_search_trigger": "Optioneel. Door komma's gescheiden zinnen, bijvoorbeeld 'zoek op, zoek online, google'. Als dit is ingevuld, gaat dit vóór de routering: alleen opdrachten die met zo'n zin beginnen zoeken op het web (de zin zelf wordt uit de zoekopdracht gehaald), alle andere opdrachten zoeken nooit. Laat leeg om de routering te laten beslissen.",
-          "tts_mode": "Streaming: lage latentie via SSE WAV met pipelining per zin. Batch: één enkele mp3-aanvraag, hogere latentie maar kleinere antwoorden cachen goed. De tts.speak service gebruikt altijd batch."
+          "tts_mode": "Streaming: lage latentie via SSE WAV met pipelining per zin. Batch: één enkele mp3-aanvraag, hogere latentie maar kleinere antwoorden cachen goed. De tts.speak service gebruikt altijd batch.",
+          "tts_gain_db": "Verhoog het volume van gesproken antwoorden. 0 = ongewijzigd. Gebruik dit als de stem van Mistral te zacht is naast andere stemmen. Luide delen worden zacht begrensd, dus zeer hoge waarden kunnen samengedrukt klinken."
         }
       }
     }

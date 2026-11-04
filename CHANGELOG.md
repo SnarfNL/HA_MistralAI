@@ -6,6 +6,7 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Added:** *Text-to-speech volume boost* option (0 to +12 dB, off by default) for when Mistral's voice is too quiet next to other voices. Mistral has no volume setting, so the integration scales the audio itself, with a soft limiter against distortion. With a boost above 0, `tts.speak` and the *Batch* mode return wav instead of mp3. With 0 nothing changes. Closes #89.
 - **Added:** a diagnostics download (the integration's ⋮ menu → *Download diagnostics*) with the settings, versions and the last 10 errors. The API key is never in it. MA-14.
 - **Added:** a repair notification when Mistral retires the configured model, with a one-click switch to a suggested model (the `-latest` version of the same model, otherwise a model from the same family, otherwise the default). Checked at startup and once a day. MA-14.
 - **Added:** *Reconfigure* to change the API key without removing the integration. MA-14.

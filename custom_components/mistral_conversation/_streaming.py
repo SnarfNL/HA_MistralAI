@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import re
+import struct
+import sys
+from array import array
 from collections.abc import AsyncGenerator
+from functools import lru_cache
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -127,3 +132,90 @@ async def iter_sse_audio_chunks(
             audio_b64 = data.get("audio_data")
             if audio_b64:
                 yield base64.b64decode(audio_b64)
+
+
+# ---------------------------------------------------------------------------
+# Volume boost for 16-bit PCM
+#
+# Mistral's /v1/audio/speech has no volume parameter, so the integration scales
+# the samples itself. No ``audioop`` (removed in Python 3.13) and no numpy.
+# ---------------------------------------------------------------------------
+
+_INT16_MAX = 32767
+# Samples up to this fraction of full scale are scaled linearly; above it a
+# smooth tanh curve takes over, so a boost never hard-clips.
+_LIMITER_KNEE = 0.75
+
+
+def wav_is_pcm16(header: bytes) -> bool:
+    """True if a WAV *header* says PCM (format tag 1) with 16 bits per sample."""
+    try:
+        (tag,) = struct.unpack_from("<H", header, 20)
+        (bits,) = struct.unpack_from("<H", header, 34)
+    except struct.error:
+        return False
+    return tag == 1 and bits == 16
+
+
+@lru_cache(maxsize=16)
+def _gain_table(gain_db: float) -> list[int]:
+    """Map every int16 sample to its boosted value (soft-limited).
+
+    Index with the sample itself: negative samples use Python's negative list
+    indices, so ``table[s]`` works for -32768..32767.
+    """
+    gain = 10 ** (gain_db / 20)
+    knee = _LIMITER_KNEE * _INT16_MAX
+    headroom = _INT16_MAX - knee
+    table: list[int] = []
+    for index in range(65536):
+        sample = index if index < 32768 else index - 65536
+        boosted = abs(sample) * gain
+        if boosted > knee:
+            boosted = knee + headroom * math.tanh((boosted - knee) / headroom)
+        value = min(round(boosted), _INT16_MAX)
+        table.append(value if sample >= 0 else -value)
+    return table
+
+
+class PcmGain:
+    """Raise the volume of little-endian signed 16-bit mono/stereo PCM.
+
+    Feed audio in any chunk sizes with :meth:`process`; a trailing odd byte is
+    kept until the next chunk, so the output is the same bytes wherever the
+    chunk boundaries fall. :meth:`flush` returns what is left at the end (a
+    single unscaled byte at most, from malformed audio). ``gain_db <= 0``
+    passes everything through untouched.
+    """
+
+    def __init__(self, gain_db: float) -> None:
+        self._table = _gain_table(float(gain_db)) if gain_db > 0 else None
+        self._carry = b""
+
+    def process(self, chunk: bytes) -> bytes:
+        if self._table is None:
+            return chunk
+        data = self._carry + chunk
+        usable = len(data) - len(data) % 2
+        self._carry = data[usable:]
+        if not usable:
+            return b""
+        samples = array("h")
+        samples.frombytes(data[:usable])
+        if sys.byteorder == "big":
+            samples.byteswap()
+        table = self._table
+        boosted = array("h", [table[s] for s in samples])
+        if sys.byteorder == "big":
+            boosted.byteswap()
+        return boosted.tobytes()
+
+    def flush(self) -> bytes:
+        carry, self._carry = self._carry, b""
+        return carry
+
+
+def apply_gain(pcm: bytes, gain_db: float) -> bytes:
+    """Boost a whole buffer of 16-bit PCM by *gain_db* (see :class:`PcmGain`)."""
+    gain = PcmGain(gain_db)
+    return gain.process(pcm) + gain.flush()

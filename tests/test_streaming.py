@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import base64
 import importlib.util
+import itertools
 import json
+import random
+import struct
 import unittest
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -46,6 +49,9 @@ _STREAMING = _load_streaming_module()
 has_speakable_content = _STREAMING.has_speakable_content
 pop_complete_sentences = _STREAMING.pop_complete_sentences
 iter_sse_audio_chunks = _STREAMING.iter_sse_audio_chunks
+PcmGain = _STREAMING.PcmGain
+apply_gain = _STREAMING.apply_gain
+wav_is_pcm16 = _STREAMING.wav_is_pcm16
 
 
 # Matches TTS_MIN_SENTENCE_CHARS in const.py. Pinned here so changes there
@@ -331,6 +337,100 @@ class SseAudioChunkTests(unittest.IsolatedAsyncioTestCase):
         ]
         result = await self._collect(_FakeResponse(chunks))
         self.assertEqual(result, [b"ok"])
+
+
+# ---------------------------------------------------------------------------
+# Volume boost (#89)
+# ---------------------------------------------------------------------------
+
+
+def _pcm(*samples: int) -> bytes:
+    return struct.pack(f"<{len(samples)}h", *samples)
+
+
+def _samples(pcm: bytes) -> tuple[int, ...]:
+    return struct.unpack(f"<{len(pcm) // 2}h", pcm)
+
+
+class PcmGainTests(unittest.TestCase):
+    def test_zero_db_is_identity(self) -> None:
+        # Including loud samples: nothing is limited when there is no boost.
+        pcm = _pcm(0, 1, -1, 1000, 24575, -24575, 32767, -32768)
+        self.assertEqual(apply_gain(pcm, 0), pcm)
+        gain = PcmGain(0)
+        self.assertEqual(gain.process(pcm), pcm)
+        self.assertEqual(gain.flush(), b"")
+
+    def test_six_db_roughly_doubles_a_small_sample(self) -> None:
+        out = _samples(apply_gain(_pcm(100, -100, 1000, -1000), 6))
+        self.assertAlmostEqual(out[0], 200, delta=2)
+        self.assertEqual(out[1], -out[0])
+        self.assertAlmostEqual(out[2], 1995, delta=3)
+        self.assertEqual(out[3], -out[2])
+
+    def test_output_never_leaves_the_int16_range(self) -> None:
+        extremes = _pcm(32767, -32768, 30000, -30000, 20000, -20000)
+        for gain_db in (1, 6, 12):
+            with self.subTest(gain_db=gain_db):
+                out = _samples(apply_gain(extremes, gain_db))
+                self.assertTrue(all(-32767 <= v <= 32767 for v in out), out)
+
+    def test_loud_samples_are_compressed_not_clipped(self) -> None:
+        out = _samples(apply_gain(_pcm(20000, 24000, 28000, 32767), 3))
+        self.assertEqual(sorted(out), list(out))  # still ordered
+        self.assertEqual(len(set(out)), 4)  # no two collapsed onto full scale
+
+    def test_gain_is_monotonic_over_the_whole_range(self) -> None:
+        ramp = _pcm(*range(0, 32768, 7))
+        out = _samples(apply_gain(ramp, 12))
+        self.assertTrue(all(b >= a for a, b in itertools.pairwise(out)))
+
+    def test_chunking_does_not_change_the_output(self) -> None:
+        rng = random.Random(1)
+        data = bytes(rng.randrange(256) for _ in range(10_001))  # odd length
+        expected = apply_gain(data, 6)
+        for size in (1, 3, 4096):
+            with self.subTest(chunk_size=size):
+                gain = PcmGain(6)
+                out = b"".join(
+                    gain.process(data[i : i + size]) for i in range(0, len(data), size)
+                )
+                self.assertEqual(out + gain.flush(), expected)
+
+    def test_odd_trailing_byte_is_carried_then_flushed_unscaled(self) -> None:
+        gain = PcmGain(6)
+        first = gain.process(_pcm(100) + b"")
+        self.assertEqual(_samples(first), (_samples(apply_gain(_pcm(100), 6))[0],))
+        self.assertEqual(gain.process(b""), b"")
+        self.assertEqual(gain.flush(), b"")
+        self.assertEqual(gain.flush(), b"")
+
+    def test_sample_split_across_chunks_is_scaled_whole(self) -> None:
+        pcm = _pcm(1000)
+        gain = PcmGain(6)
+        self.assertEqual(gain.process(pcm[:1]), b"")
+        self.assertEqual(gain.process(pcm[1:]), apply_gain(pcm, 6))
+
+
+class WavIsPcm16Tests(unittest.TestCase):
+    @staticmethod
+    def _header(tag: int = 1, bits: int = 16) -> bytes:
+        header = bytearray(44)
+        struct.pack_into("<H", header, 20, tag)
+        struct.pack_into("<H", header, 34, bits)
+        return bytes(header)
+
+    def test_pcm16_is_accepted(self) -> None:
+        self.assertTrue(wav_is_pcm16(self._header()))
+
+    def test_other_bit_depths_and_formats_are_skipped(self) -> None:
+        self.assertFalse(wav_is_pcm16(self._header(bits=24)))
+        self.assertFalse(wav_is_pcm16(self._header(bits=8)))
+        self.assertFalse(wav_is_pcm16(self._header(tag=3, bits=32)))  # float
+
+    def test_short_header_is_skipped(self) -> None:
+        self.assertFalse(wav_is_pcm16(b""))
+        self.assertFalse(wav_is_pcm16(self._header()[:30]))
 
 
 if __name__ == "__main__":
