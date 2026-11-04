@@ -6,7 +6,11 @@
         "title": "Verbind met Mistral AI",
         "description": "Voer je Mistral AI API-sleutel in. Aanmaken via [console.mistral.ai]({api_key_url}).",
         "data": {
-          "api_key": "API-sleutel"
+          "api_key": "API-sleutel",
+          "api_region": "Regio"
+        },
+        "data_description": {
+          "api_region": "Waar Mistral je verzoeken verwerkt. 'Wereldwijd' is de standaard. De opties EU en VS gebruiken regionale inferentie: die kost 1,1× de normale prijs, biedt alleen modellen die in die regio draaien (de modellijst kan afwijken) en webzoeken is er niet beschikbaar. Je API-sleutel wordt gecontroleerd op de regio die je kiest."
         }
       },
       "reauth_confirm": {
@@ -17,10 +21,14 @@
         }
       },
       "reconfigure": {
-        "title": "Mistral AI API-sleutel wijzigen",
-        "description": "Voer een nieuwe API-sleutel in. De integratie start opnieuw met deze sleutel; je instellingen blijven hetzelfde.",
+        "title": "Mistral AI API-sleutel of regio wijzigen",
+        "description": "Voer de API-sleutel in en kies de regio. De integratie start opnieuw met deze gegevens; je instellingen blijven hetzelfde.",
         "data": {
-          "api_key": "API-sleutel"
+          "api_key": "API-sleutel",
+          "api_region": "Regio"
+        },
+        "data_description": {
+          "api_region": "Waar Mistral je verzoeken verwerkt. 'Wereldwijd' is de standaard. De opties EU en VS gebruiken regionale inferentie: die kost 1,1× de normale prijs, biedt alleen modellen die in die regio draaien (de modellijst kan afwijken) en webzoeken is er niet beschikbaar. Je API-sleutel wordt gecontroleerd op de regio die je kiest."
         }
       }
     },
@@ -32,7 +40,7 @@
     "abort": {
       "already_configured": "Mistral AI Conversation is al geconfigureerd.",
       "reauth_successful": "Herverificatie geslaagd.",
-      "reconfigure_successful": "De API-sleutel is gewijzigd."
+      "reconfigure_successful": "De verbindingsinstellingen zijn gewijzigd."
     }
   },
   "options": {
@@ -93,6 +101,13 @@
         "mistral-small-latest": "Mistral Small — balans snelheid/kwaliteit (gratis tier)",
         "mistral-medium-latest": "Mistral Medium — nodig voor websearch; ⚠️ betaalde tier, vaak rate-limited op gratis API-keys",
         "mistral-large-latest": "Mistral Large — meest capabel; ⚠️ betaalde tier, vaak rate-limited op gratis API-keys"
+      }
+    },
+    "api_region": {
+      "options": {
+        "global": "Wereldwijd (api.mistral.ai)",
+        "eu": "EU (api.eu.mistral.ai)",
+        "us": "VS (api.us.mistral.ai)"
       }
     }
   },

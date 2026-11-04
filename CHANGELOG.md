@@ -6,6 +6,7 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Added:** *Region* choice next to the API key (and in *Reconfigure*): Global (`api.mistral.ai`, the default), EU (`api.eu.mistral.ai`) or US (`api.us.mistral.ai`), for Mistral's regional inference. Regional endpoints cost 1.1× the normal price and only serve models hosted in that region. **Web search is not offered on a regional endpoint** (it is switched off at startup, with one log line) until it has been verified there. Existing installs stay on Global; nothing changes for them. Closes #84.
 - **Added:** a diagnostics download (the integration's ⋮ menu → *Download diagnostics*) with the settings, versions and the last 10 errors. The API key is never in it. MA-14.
 - **Added:** a repair notification when Mistral retires the configured model, with a one-click switch to a suggested model (the `-latest` version of the same model, otherwise a model from the same family, otherwise the default). Checked at startup and once a day. MA-14.
 - **Added:** *Reconfigure* to change the API key without removing the integration. MA-14.

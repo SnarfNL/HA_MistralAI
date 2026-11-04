@@ -14,7 +14,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 
 from custom_components.mistral_conversation.const import DOMAIN
 
-from .conftest import API_KEY, BASE
+from .conftest import API_KEY, BASE, load_fixture
 
 
 async def test_user_step_creates_entry(
@@ -355,3 +355,178 @@ async def test_reconfigure_not_loaded_entry_reloads(
     await hass.async_block_till_done()
     assert result["reason"] == "reconfigure_successful"
     assert mock_config_entry.data["api_key"] == "sk-new"
+
+
+# ---------------------------------------------------------------------------
+# Regional inference (#84): the region sits next to the API key
+# ---------------------------------------------------------------------------
+
+EU = "https://api.eu.mistral.ai/v1"
+
+
+def _mock_eu(aioclient_mock: AiohttpClientMocker) -> None:
+    aioclient_mock.get(f"{EU}/models", text=load_fixture("models.json"))
+    aioclient_mock.get(f"{EU}/audio/voices", text=load_fixture("voices.json"))
+
+
+def _urls(aioclient_mock: AiohttpClientMocker) -> list[str]:
+    return [str(call[1]) for call in aioclient_mock.mock_calls]
+
+
+def _region_key(result):
+    return next(k for k in result["data_schema"].schema if str(k) == "api_region")
+
+
+async def _setup_eu_entry(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> MockConfigEntry:
+    from homeassistant.setup import async_setup_component
+
+    assert await async_setup_component(hass, "homeassistant", {})
+    _mock_eu(aioclient_mock)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Mistral AI Conversation",
+        data={"api_key": API_KEY, "api_region": "eu"},
+        options={},
+        unique_id=DOMAIN,
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_user_step_offers_the_region_defaulting_to_global(
+    hass: HomeAssistant,
+) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert _fields(result) == {"api_key", "api_region"}
+    assert _region_key(result).description == {"suggested_value": "global"}
+
+
+async def test_user_step_stores_the_region_and_checks_that_host(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(f"{EU}/models", json={"data": []})
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch(
+        "custom_components.mistral_conversation.async_setup_entry", return_value=True
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"api_key": API_KEY, "api_region": "eu"}
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {"api_key": API_KEY, "api_region": "eu"}
+    assert _urls(aioclient_mock) == [f"{EU}/models"]
+
+
+async def test_user_step_without_a_region_is_global(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(f"{BASE}/models", json={"data": []})
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch(
+        "custom_components.mistral_conversation.async_setup_entry", return_value=True
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"api_key": API_KEY}
+        )
+    assert "api_region" not in result["data"]
+    assert _urls(aioclient_mock) == [f"{BASE}/models"]
+
+
+async def test_user_step_error_keeps_the_chosen_region(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    aioclient_mock.get(f"{EU}/models", status=401)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-bad", "api_region": "eu"}
+    )
+    assert result["errors"] == {"base": "invalid_auth"}
+    assert _region_key(result).description == {"suggested_value": "eu"}
+
+
+async def test_reconfigure_offers_the_current_region(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    result = await _start_reconfigure(hass, setup_integration)
+    assert _fields(result) == {"api_key", "api_region"}
+    assert _region_key(result).description == {"suggested_value": "global"}
+
+
+async def test_reconfigure_changes_the_region_and_reloads_once(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    entry = setup_integration
+    _mock_eu(aioclient_mock)
+    aioclient_mock.mock_calls.clear()
+    result = await _start_reconfigure(hass, entry)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-new", "api_region": "eu"}
+    )
+    await hass.async_block_till_done()
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data["api_region"] == "eu"
+    assert entry.data["api_key"] == "sk-new"
+    assert entry.state is config_entries.ConfigEntryState.LOADED
+    assert entry.runtime_data.client.region == "eu"
+    urls = _urls(aioclient_mock)
+    assert not [u for u in urls if u.startswith(BASE)]  # nothing went to global
+    # New key check + one reload (key check + background model check).
+    assert len([u for u in urls if u == f"{EU}/models"]) == 3
+
+
+async def test_reconfigure_without_a_region_keeps_the_current_one(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    entry = await _setup_eu_entry(hass, aioclient_mock)
+    result = await _start_reconfigure(hass, entry)
+    assert _region_key(result).description == {"suggested_value": "eu"}
+    aioclient_mock.mock_calls.clear()
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-new"}
+    )
+    await hass.async_block_till_done()
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data["api_region"] == "eu"
+    assert not [u for u in _urls(aioclient_mock) if u.startswith(BASE)]
+
+
+async def test_reauth_checks_the_key_on_the_entrys_region(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    entry = await _setup_eu_entry(hass, aioclient_mock)
+    aioclient_mock.mock_calls.clear()
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-new"}
+    )
+    await hass.async_block_till_done()
+    assert result["reason"] == "reauth_successful"
+    assert entry.data == {"api_key": "sk-new", "api_region": "eu"}
+    assert not [u for u in _urls(aioclient_mock) if u.startswith(BASE)]
+
+
+async def test_regional_endpoint_hides_web_search_in_the_options(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    entry = await _setup_eu_entry(hass, aioclient_mock)
+    result = await _options(hass, entry, "mistral-small-latest")
+    assert not WEB_FIELDS & _fields(result)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"temperature": 0.3}
+    )
+    await hass.async_block_till_done()
+    assert result["data"]["web_search"] is False
