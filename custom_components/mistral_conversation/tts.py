@@ -24,15 +24,22 @@ Two operating modes selectable via integration options (CONF_TTS_MODE):
   so direct ``tts.speak`` service calls keep working. When CONF_TTS_MODE is
   ``batch``, ``async_stream_tts_audio`` also delegates here via the base
   class default implementation.
+
+Both modes support an optional volume boost (CONF_TTS_GAIN_DB, 0 = off).
+Mistral has no volume parameter, so the 16-bit PCM is scaled here with a soft
+limiter. Streaming scales every sentence's PCM after its WAV header; batch asks
+for wav instead of mp3, scales it in the executor and returns wav.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import logging
 import struct
 import time
+import wave
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -49,9 +56,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MistralConfigEntry
 from ._streaming import (
+    PcmGain,
+    apply_gain,
     has_speakable_content,
     iter_sse_audio_chunks,
     pop_complete_sentences,
+    wav_is_pcm16,
 )
 from ._voices import build_voice_list
 from .api import (
@@ -61,9 +71,12 @@ from .api import (
     translate_stream,
 )
 from .const import (
+    CONF_TTS_GAIN_DB,
     CONF_TTS_MODE,
+    DEFAULT_TTS_GAIN_DB,
     DEFAULT_TTS_MODE,
     DEFAULT_TTS_VOICE,
+    TTS_GAIN_DB_MAX,
     TTS_INTER_SENTENCE_SILENCE_BYTES,
     TTS_LANGUAGES,
     TTS_MAX_INFLIGHT_SENTENCES,
@@ -106,6 +119,32 @@ def _silence_for_header(header: bytes) -> bytes:
     return bytes(sample_rate * _INTER_SENTENCE_SILENCE_MS // 1000 * frame_bytes)
 
 
+def _boost_wav(wav_bytes: bytes, gain_db: float) -> bytes | None:
+    """Return *wav_bytes* with its volume raised, or None if it is not 16-bit PCM.
+
+    Blocking (decode, scale, re-wrap): run it in the executor.
+    """
+    try:
+        with wave.open(io.BytesIO(wav_bytes), "rb") as reader:
+            channels, width, rate = (
+                reader.getnchannels(),
+                reader.getsampwidth(),
+                reader.getframerate(),
+            )
+            frames = reader.readframes(reader.getnframes())
+    except (wave.Error, EOFError):
+        return None
+    if width != 2:
+        return None
+    out = io.BytesIO()
+    with wave.open(out, "wb") as writer:
+        writer.setnchannels(channels)
+        writer.setsampwidth(width)
+        writer.setframerate(rate)
+        writer.writeframes(apply_gain(frames, gain_db))
+    return out.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
@@ -145,6 +184,23 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
         # fetched yet"; the picker then shows no voices. There is no static
         # fallback: only voices that really exist on the account are offered.
         self._voice_cache: list[Voice] | None = None
+        # The "boost not applied" warning is logged once per entity.
+        self._gain_skip_logged = False
+
+    def _gain_db(self) -> float:
+        """The configured volume boost in dB, clamped to 0..TTS_GAIN_DB_MAX."""
+        try:
+            gain = float(self._entry.options.get(CONF_TTS_GAIN_DB, DEFAULT_TTS_GAIN_DB))
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, min(float(TTS_GAIN_DB_MAX), gain))
+
+    def _log_gain_skipped(self) -> None:
+        if not self._gain_skip_logged:
+            self._gain_skip_logged = True
+            _LOGGER.warning(
+                "Mistral TTS audio is not 16-bit PCM WAV; the volume boost is not applied"
+            )
 
     async def async_added_to_hass(self) -> None:
         """Fetch the account's voice list once the entity is registered.
@@ -271,11 +327,14 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
         """
         voice = options.get("voice") or DEFAULT_TTS_VOICE
 
+        # With a volume boost the audio is scaled here, which needs raw PCM,
+        # so ask for wav; without one nothing changes (mp3).
+        gain_db = self._gain_db()
         payload = {
             "model": TTS_MODEL,
             "input": message,
             "voice_id": voice,
-            "response_format": "mp3",
+            "response_format": "wav" if gain_db > 0 else "mp3",
         }
 
         async with self._runtime.client.speech(
@@ -294,7 +353,15 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
             len(audio_bytes),
             voice,
         )
-        return "mp3", audio_bytes
+        if gain_db <= 0:
+            return "mp3", audio_bytes
+        boosted = await self.hass.async_add_executor_job(
+            _boost_wav, audio_bytes, gain_db
+        )
+        if boosted is None:
+            self._log_gain_skipped()
+            return "wav", audio_bytes
+        return "wav", boosted
 
     # ------------------------------------------------------------------
     # Streaming path
@@ -529,6 +596,9 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
         }
         header_buf = b""
         header_done = False
+        # Volume boost: set once the header shows 16-bit PCM; None = untouched.
+        gain: PcmGain | None = None
+        gain_db = self._gain_db()
         request_start = time.monotonic()
         first_chunk_logged = False
         async with self._runtime.client.speech(
@@ -552,8 +622,21 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
                     if len(header_buf) < TTS_WAV_HEADER_SIZE:
                         continue
                     header_done = True
-                    await out_queue.put(("header", header_buf[:TTS_WAV_HEADER_SIZE]))
+                    header = header_buf[:TTS_WAV_HEADER_SIZE]
+                    await out_queue.put(("header", header))
+                    if gain_db > 0:
+                        if wav_is_pcm16(header):
+                            gain = PcmGain(gain_db)
+                        else:
+                            self._log_gain_skipped()
                     audio = header_buf[TTS_WAV_HEADER_SIZE:]
                     if not audio:
                         continue
+                if gain is not None:
+                    audio = gain.process(audio)
+                    if not audio:
+                        continue
                 await out_queue.put(audio)
+            # An odd trailing byte (malformed audio) is passed on unscaled.
+            if gain is not None and (tail := gain.flush()):
+                await out_queue.put(tail)

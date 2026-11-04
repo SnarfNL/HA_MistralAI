@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMocker,
@@ -355,3 +355,33 @@ async def test_reconfigure_not_loaded_entry_reloads(
     await hass.async_block_till_done()
     assert result["reason"] == "reconfigure_successful"
     assert mock_config_entry.data["api_key"] == "sk-new"
+
+
+async def test_tts_gain_defaults_to_zero(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    result = await _options(hass, setup_integration, "ministral-8b-latest")
+    assert "tts_gain_db" in _fields(result)
+    assert _default(result, "tts_gain_db") == 0
+
+
+async def test_tts_gain_is_saved(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    entry = setup_integration
+    result = await _options(
+        hass, entry, "ministral-8b-latest", {"tts_gain_db": 6, "temperature": 0.3}
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options["tts_gain_db"] == 6
+
+
+async def test_tts_gain_above_the_range_is_refused(
+    hass: HomeAssistant, setup_integration: MockConfigEntry
+) -> None:
+    result = await _options(hass, setup_integration, "ministral-8b-latest")
+    with pytest.raises(InvalidData):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], {"tts_gain_db": 13}
+        )

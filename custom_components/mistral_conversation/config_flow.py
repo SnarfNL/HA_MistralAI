@@ -17,6 +17,7 @@ from .const import (
     CONF_MODEL,
     CONF_PROMPT,
     CONF_TEMPERATURE,
+    CONF_TTS_GAIN_DB,
     CONF_TTS_MODE,
     CONF_WEB_SEARCH,
     CONF_WEB_SEARCH_MODE,
@@ -25,11 +26,13 @@ from .const import (
     DEFAULT_MODEL,
     DEFAULT_PROMPT,
     DEFAULT_TEMPERATURE,
+    DEFAULT_TTS_GAIN_DB,
     DEFAULT_TTS_MODE,
     DEFAULT_WEB_SEARCH,
     DEFAULT_WEB_SEARCH_MODE,
     DEFAULT_WEB_SEARCH_TRIGGER,
     DOMAIN,
+    TTS_GAIN_DB_MAX,
     TTS_MODES,
     WEB_SEARCH_MODES,
     supports_web_search,
@@ -324,6 +327,24 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
                 options=TTS_MODES,
                 mode=selector.SelectSelectorMode.DROPDOWN,
                 translation_key="tts_mode",
+            )
+        )
+
+        # ── TTS volume boost ──────────────────────────────────
+        # Mistral has no volume parameter, so the audio is scaled here.
+        # 0 = unchanged (the default).
+        schema[
+            vol.Optional(
+                CONF_TTS_GAIN_DB,
+                default=opts.get(CONF_TTS_GAIN_DB, DEFAULT_TTS_GAIN_DB),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=TTS_GAIN_DB_MAX,
+                step=1,
+                unit_of_measurement="dB",
+                mode=selector.NumberSelectorMode.SLIDER,
             )
         )
 
