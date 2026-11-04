@@ -23,11 +23,14 @@ from ._models import (
 from ._web_search import WebSearchConversations
 from .api import MistralClient
 from .const import (
+    CONF_API_REGION,
     CONF_MODEL,
     CONF_WEB_SEARCH,
+    DEFAULT_API_REGION,
     DEFAULT_MODEL,
     DEFAULT_WEB_SEARCH,
     DOMAIN,
+    REGION_GLOBAL,
     supports_web_search,
 )
 
@@ -63,9 +66,11 @@ type MistralConfigEntry = ConfigEntry[MistralRuntimeData]
 async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> bool:
     """Set up Mistral AI Conversation from a config entry."""
     api_key = entry.data[CONF_API_KEY]
+    # Entries from before regional inference have no region: global.
+    region = entry.data.get(CONF_API_REGION, DEFAULT_API_REGION)
     session = async_get_clientsession(hass)
 
-    error, detail = await MistralClient.validate_key(session, api_key)
+    error, detail = await MistralClient.validate_key(session, api_key, region)
     if error == "invalid_auth":
         raise ConfigEntryAuthFailed("Invalid Mistral AI API key")
     if error:
@@ -76,7 +81,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> b
 
     errors: deque[dict[str, Any]] = deque(maxlen=10)
     entry.runtime_data = MistralRuntimeData(
-        client=MistralClient(hass, entry, session, api_key, errors), errors=errors
+        client=MistralClient(hass, entry, session, api_key, errors, region),
+        errors=errors,
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -98,15 +104,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> b
 
 
 def _async_fix_web_search(hass: HomeAssistant, entry: MistralConfigEntry) -> None:
-    """Turn web search off when the saved model cannot use it (MA-30).
+    """Turn web search off when the saved model or region cannot use it (MA-30).
 
     Runs before the update listener is registered, so this write does not
     trigger a reload.
     """
     model = entry.options.get(CONF_MODEL, DEFAULT_MODEL)
+    region = entry.data.get(CONF_API_REGION, DEFAULT_API_REGION)
     web_search = entry.options.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH)
-    if web_search and not supports_web_search(model):
-        _LOGGER.warning("Web search turned off: model %s does not support it", model)
+    if web_search and not supports_web_search(model, region):
+        if region != REGION_GLOBAL:
+            _LOGGER.warning(
+                "Web search turned off: it is not available on the %s regional endpoint",
+                region,
+            )
+        else:
+            _LOGGER.warning(
+                "Web search turned off: model %s does not support it", model
+            )
         hass.config_entries.async_update_entry(
             entry, options={**entry.options, CONF_WEB_SEARCH: False}
         )

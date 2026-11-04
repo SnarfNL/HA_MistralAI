@@ -120,3 +120,36 @@ def test_supports_web_search() -> None:
     assert supports_web_search("mistral-large-latest")
     assert not supports_web_search("ministral-14b-latest")
     assert not supports_web_search("ministral-8b-latest")
+
+
+# ---------------------------------------------------------------------------
+# Regional inference (#84)
+# ---------------------------------------------------------------------------
+
+
+def test_region_bases_cover_every_region() -> None:
+    assert C.API_REGIONS == ["global", "eu", "us"]
+    assert set(C.REGION_BASES) == set(C.API_REGIONS)
+    assert C.REGION_BASES["global"] == C.MISTRAL_API_BASE
+    assert C.REGION_BASES["eu"] == "https://api.eu.mistral.ai/v1"
+    assert C.REGION_BASES["us"] == "https://api.us.mistral.ai/v1"
+    for base in C.REGION_BASES.values():
+        assert base.startswith("https://")
+        assert not base.endswith("/")
+
+
+def test_api_base_defaults_to_global() -> None:
+    assert C.DEFAULT_API_REGION == "global"
+    assert C.api_base(None) == C.MISTRAL_API_BASE
+    assert C.api_base("") == C.MISTRAL_API_BASE
+    assert C.api_base("mars") == C.MISTRAL_API_BASE
+    assert C.api_base("eu") == "https://api.eu.mistral.ai/v1"
+
+
+def test_web_search_is_unavailable_on_regional_endpoints() -> None:
+    for region in (None, "global"):
+        assert C.supports_web_search("mistral-small-latest", region)
+        assert not C.supports_web_search("ministral-8b-latest", region)
+    for region in ("eu", "us"):
+        for model in ("mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"):
+            assert not C.supports_web_search(model, region)
