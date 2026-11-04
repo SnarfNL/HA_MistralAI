@@ -133,6 +133,9 @@
     },
     "invalid_response": {
       "message": "Mistral returned an answer that could not be read."
+    },
+    "web_search_unavailable": {
+      "message": "Web search is not available right now. Try again in a moment."
     }
   },
   "issues": {

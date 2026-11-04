@@ -160,12 +160,22 @@ class MistralClient:
         self, source: str, err: BaseException, status: int | None = None
     ) -> None:
         """Remember an error for diagnostics: never a body, URL or header."""
+        self.record_note(
+            source,
+            getattr(err, "translation_key", None) or type(err).__name__,
+            status,
+        )
+
+    def record_note(
+        self, source: str, note: str, status: int | None = None
+    ) -> None:
+        """Remember a problem that is not an exception (a short fixed label)."""
         self.errors.append(
             {
                 "time": dt_util.utcnow().isoformat(),
                 "source": source,
                 "status": status,
-                "error": getattr(err, "translation_key", None) or type(err).__name__,
+                "error": note,
             }
         )
 

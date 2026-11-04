@@ -133,6 +133,9 @@
     },
     "invalid_response": {
       "message": "Mistral gaf een antwoord dat niet te lezen was."
+    },
+    "web_search_unavailable": {
+      "message": "Zoeken op internet lukt nu niet. Probeer het zo nog eens."
     }
   },
   "issues": {

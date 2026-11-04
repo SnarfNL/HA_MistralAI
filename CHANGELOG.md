@@ -6,6 +6,8 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Changed:** when a web search fails, the assistant now says so instead of answering from memory. On the trigger-phrase and *Always search* routes the voice assistant speaks a short message (English, Dutch or French) and no longer falls back to a normal answer. When the model asked for the search, it is told the search is unavailable and to say it could not look this up. Refs #88.
+- **Changed:** a web search that fails is now logged as a warning (it was a debug line), and an answer that Mistral gave *without* running the search is logged as a warning and listed in the diagnostics download. The answer itself is unchanged. Refs #88.
 - **Added:** a diagnostics download (the integration's ⋮ menu → *Download diagnostics*) with the settings, versions and the last 10 errors. The API key is never in it. MA-14.
 - **Added:** a repair notification when Mistral retires the configured model, with a one-click switch to a suggested model (the `-latest` version of the same model, otherwise a model from the same family, otherwise the default). Checked at startup and once a day. MA-14.
 - **Added:** *Reconfigure* to change the API key without removing the integration. MA-14.

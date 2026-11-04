@@ -116,16 +116,19 @@ class NoDoubleRetryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(ctx.exception.translation_key, key)
                 stream.assert_not_awaited()
 
-    async def test_direct_route_still_falls_back_on_other_errors(self) -> None:
+    async def test_direct_route_does_not_answer_from_memory_on_other_errors(self) -> None:
+        """The user asked for a search: a failed one is spoken, not hidden (#88)."""
         entity = _entity(WEB_SEARCH_ALWAYS)
         stream = AsyncMock()
         with (
             patch.object(entity, "_conversations_chat", AsyncMock(side_effect=mistral_error("cannot_connect"))),
             patch.object(entity, "_stream_and_collect", stream),
             patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
+            self.assertRaises(HomeAssistantError) as ctx,
         ):
             await entity._async_converse(_user_input("weather"), _ChatLog())
-        stream.assert_awaited_once()
+        self.assertEqual(ctx.exception.translation_key, "web_search_unavailable")
+        stream.assert_not_awaited()
 
     async def test_model_requested_search_does_not_retry_on_unrecoverable_errors(self) -> None:
         entity = _entity(WEB_SEARCH_BY_MODEL)
@@ -184,6 +187,147 @@ class ConversationsParsingTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HomeAssistantError) as ctx:
             await self._reply(["not", "an", "object"])
         self.assertEqual(ctx.exception.translation_key, "invalid_response")
+
+
+class SearchVisibilityTests(unittest.IsolatedAsyncioTestCase):
+    """A failed or skipped web search shows up in the log and diagnostics (#88)."""
+
+    LOGGER = conv_module._LOGGER.name
+
+    async def _reply(self, data) -> tuple[str, conv_module.MistralConversationEntity]:
+        entity = _entity(WEB_SEARCH_ALWAYS)
+
+        class _Resp:
+            status = 200
+            headers = MappingProxyType({})
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return None
+
+            async def json(self):
+                return data
+
+        runtime = attach_runtime(
+            entity._entry, SimpleNamespace(request=lambda *a, **k: _Resp())
+        )
+        runtime.web_search_convs = MagicMock(
+            pop_expired=MagicMock(return_value=[]), get=MagicMock(return_value=None)
+        )
+        reply = await entity._conversations_chat(
+            model="mistral-small-latest", user_text="q", language="nl", conv_id=None
+        )
+        return reply, entity
+
+    async def test_answer_without_a_search_is_logged_and_recorded(self) -> None:
+        data = {"outputs": [{"type": "message.output", "content": "From memory."}]}
+        with self.assertLogs(self.LOGGER, "WARNING") as logs:
+            reply, entity = await self._reply(data)
+        self.assertEqual(reply, "From memory.")  # the answer is not changed
+        self.assertIn("without running a web search", logs.output[0])
+        (record,) = entity._runtime.errors
+        self.assertEqual(
+            (record["source"], record["status"], record["error"]),
+            ("conversation", 200, "web_search_not_run"),
+        )
+
+    async def test_answer_with_a_search_is_not_flagged(self) -> None:
+        data = {
+            "outputs": [
+                {"type": "tool.execution", "name": "web_search"},
+                {"type": "message.output", "content": "Sunny."},
+            ]
+        }
+        with self.assertNoLogs(self.LOGGER, "WARNING"):
+            reply, entity = await self._reply(data)
+        self.assertEqual(reply, "Sunny.")
+        self.assertEqual(len(entity._runtime.errors), 0)
+
+    async def test_non_list_outputs_count_as_no_search(self) -> None:
+        with self.assertLogs(self.LOGGER, "WARNING"):
+            await self._reply({"outputs": "junk"})
+
+    async def test_web_search_usage_is_logged_at_debug(self) -> None:
+        data = {
+            "outputs": [{"type": "tool.execution", "name": "web_search"}],
+            "usage": {"connectors": {"web_search": 1}},
+        }
+        with self.assertLogs(self.LOGGER, "DEBUG") as logs:
+            await self._reply(data)
+        self.assertTrue(any("calls billed" in line and "1" in line for line in logs.output))
+
+    async def test_failed_direct_search_is_logged_as_a_warning(self) -> None:
+        entity = _entity(WEB_SEARCH_ALWAYS)
+        with (
+            patch.object(entity, "_conversations_chat", AsyncMock(side_effect=mistral_error("cannot_connect"))),
+            patch.object(entity, "_stream_and_collect", AsyncMock()),
+            patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
+            self.assertLogs(self.LOGGER, "WARNING") as logs,
+            self.assertRaises(HomeAssistantError),
+        ):
+            await entity._async_converse(_user_input("weather"), _ChatLog())
+        self.assertIn("Web search failed", logs.output[0])
+
+    async def test_failed_model_search_is_logged_as_a_warning(self) -> None:
+        entity = _entity(WEB_SEARCH_BY_MODEL)
+
+        async def model_asks_for_search(payload, chat_log, user_input, *, intercept_tool, intercepted):
+            if intercept_tool:
+                intercepted.append("weather amsterdam")
+
+        with (
+            patch.object(entity, "_conversations_chat", AsyncMock(side_effect=mistral_error("cannot_connect"))),
+            patch.object(entity, "_stream_and_collect", AsyncMock(side_effect=model_asks_for_search)),
+            patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
+            self.assertLogs(self.LOGGER, "WARNING") as logs,
+        ):
+            await entity._async_converse(_user_input("what's the weather?"), _ChatLog())
+        self.assertIn("Web search lookup failed", logs.output[0])
+
+
+class ModelSearchMessageTests(unittest.IsolatedAsyncioTestCase):
+    """What the model is told after it asked for a web search (#88)."""
+
+    async def _second_round_messages(self, search_result) -> list[dict]:
+        entity = _entity(WEB_SEARCH_BY_MODEL)
+        payloads: list[dict] = []
+
+        async def model_asks_for_search(payload, chat_log, user_input, *, intercept_tool, intercepted):
+            payloads.append(payload)
+            if intercept_tool:
+                intercepted.append("weather amsterdam")
+
+        chat_search = AsyncMock(side_effect=search_result)
+        with (
+            patch.object(entity, "_conversations_chat", chat_search),
+            patch.object(entity, "_stream_and_collect", AsyncMock(side_effect=model_asks_for_search)),
+            patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
+        ):
+            await entity._async_converse(_user_input("what's the weather?"), _ChatLog())
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(chat_search.await_count, 1)  # at most one search per turn
+        self.assertNotIn("tools", payloads[1])  # the search tool is withdrawn
+        return payloads[1]["messages"]
+
+    async def test_failed_search_tells_the_model_not_to_answer_from_memory(self) -> None:
+        messages = await self._second_round_messages(mistral_error("cannot_connect"))
+        text = messages[-1]["content"]
+        self.assertIn("unavailable", text)
+        self.assertIn("could not look this up", text)
+        self.assertIn("from memory", text)
+        self.assertNotIn("No results", text)
+
+    async def test_found_results_are_still_handed_to_the_model(self) -> None:
+        messages = await self._second_round_messages(["Sunny, 18 degrees."])
+        text = messages[-1]["content"]
+        self.assertIn("Sunny, 18 degrees.", text)
+        self.assertIn("answer my original question directly", text)
+
+    async def test_empty_results_still_say_no_results(self) -> None:
+        messages = await self._second_round_messages([""])
+        self.assertIn("No results were returned.", messages[-1]["content"])
 
 
 class SpokenErrorTests(unittest.IsolatedAsyncioTestCase):
