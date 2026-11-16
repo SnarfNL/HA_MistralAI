@@ -4,7 +4,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import voluptuous as vol
+try:
+    # HA 2026.9+ validates with probatio; ``voluptuous`` is only an alias.
+    import probatio as vol
+except ImportError:  # pragma: no cover - HA < 2026.9 ships voluptuous only
+    import voluptuous as vol  # type: ignore[no-redef]
 from homeassistant import config_entries
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API
 from homeassistant.core import callback
