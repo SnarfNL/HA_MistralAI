@@ -6,6 +6,8 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Fixed (HA 2026.10):** every Assist tool call logged *"Detected that custom integration 'mistral_conversation' accesses `ToolResultContent.tool_result`, which is deprecated … This will stop working in Home Assistant 2027.11.0"*. The integration now reads the new `ToolResultContent.result` (`llm.ToolResult`) on HA 2026.10 and later, and passes the tool's error flag on to Mistral (`{"data": …, "error": …}`, like HA's own integrations), so the model can tell a failed tool call from a successful one. Older HA versions keep working as before.
+- **Internal:** platforms are typed with `AddConfigEntryEntitiesCallback`, `async_get_options_flow` is a `@callback`, tool call IDs are hashed with `md5(usedforsecurity=False)` (works on FIPS-enabled systems), the config and repair flows import `probatio` when HA provides it (HA 2026.9+, falling back to `voluptuous`) so mypy passes against HA 2026.10, and CI's "latest" leg tests against HA 2026.10.
 - **Added:** a diagnostics download (the integration's ⋮ menu → *Download diagnostics*) with the settings, versions and the last 10 errors. The API key is never in it. MA-14.
 - **Added:** a repair notification when Mistral retires the configured model, with a one-click switch to a suggested model (the `-latest` version of the same model, otherwise a model from the same family, otherwise the default). Checked at startup and once a day. MA-14.
 - **Added:** *Reconfigure* to change the API key without removing the integration. MA-14.
