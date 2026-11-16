@@ -232,6 +232,33 @@ def _resolve_trigger(text: str, trigger: str) -> tuple[bool, str]:
     return True, stripped[len(matched):].lstrip(" :").strip()
 
 
+def _tool_result_to_json(res: conversation.ToolResultContent) -> str:
+    """Serialize a tool result for the ``content`` of a Mistral ``tool`` message.
+
+    HA 2026.10 replaced ``ToolResultContent.tool_result`` (plain JSON) with
+    ``ToolResultContent.result``, an ``llm.ToolResult`` holding ``data`` and an
+    ``error`` flag. The old attribute is a deprecated shim that logs a warning
+    on every access and is removed in HA 2027.11, so it is only read on older
+    HA versions that have no ``result`` (the minimum in hacs.json is 2025.10).
+
+    On 2026.10+ the result is sent as ``{"data": ..., "error": ...}``, the same
+    shape HA core's own chat-completions integrations (Ollama, OpenRouter) use,
+    so the model can tell a failed tool call from a successful one.
+    """
+    result = getattr(res, "result", None)
+    if result is not None and hasattr(result, "data"):
+        return json.dumps(
+            _sanitize(
+                {"data": result.data, "error": bool(getattr(result, "error", False))}
+            )
+        )
+
+    # HA < 2026.10: the result is plain JSON on ``tool_result``. _sanitize
+    # leaves JSON values unchanged and turns anything else into a string
+    # instead of crashing json.dumps.
+    return json.dumps(_sanitize(getattr(res, "tool_result", None)))
+
+
 def _convert_chat_log_to_messages(
     chat_log: conversation.ChatLog,
 ) -> list[dict[str, Any]]:
@@ -293,11 +320,7 @@ def _convert_chat_log_to_messages(
                             "role": "tool",
                             "tool_call_id": _to_mistral_id(str(res.tool_call_id)),
                             "name": str(res.tool_name),
-                            "content": json.dumps(
-                                _sanitize(res.tool_result)
-                                if isinstance(res.tool_result, (dict, list))
-                                else res.tool_result
-                            ),
+                            "content": _tool_result_to_json(res),
                         })
             else:
                 messages.append({"role": "assistant", "content": str(content.content or "")})
