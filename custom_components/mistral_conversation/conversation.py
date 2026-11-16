@@ -1,6 +1,7 @@
 """Conversation platform for Mistral AI."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
@@ -164,9 +165,12 @@ def _format_tool(tool: llm.Tool, custom_serializer: Any = None) -> dict[str, Any
 
 
 def _to_mistral_id(ha_id: str) -> str:
-    """Convert an HA tool_call ID to a Mistral-compatible 9-char alphanumeric ID."""
-    import hashlib
-    return hashlib.md5(ha_id.encode()).hexdigest()[:9]
+    """Convert an HA tool_call ID to a Mistral-compatible 9-char alphanumeric ID.
+
+    The hash only shortens the ID; ``usedforsecurity=False`` keeps it working
+    on FIPS-enabled systems, where a plain ``hashlib.md5()`` raises.
+    """
+    return hashlib.md5(ha_id.encode(), usedforsecurity=False).hexdigest()[:9]
 
 
 def _web_search_tool_def() -> dict[str, Any]:
