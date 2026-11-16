@@ -7,6 +7,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API
+from homeassistant.core import callback
 from homeassistant.helpers import llm, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -145,6 +146,7 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return error
 
     @staticmethod
+    @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> MistralOptionsFlow:
