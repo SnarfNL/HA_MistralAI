@@ -49,7 +49,7 @@ async def test_conversation_rate_limit_is_spoken(
     assert result.response.response_type is intent.IntentResponseType.ERROR
     assert (
         result.response.speech["plain"]["speech"]
-        == "Mistral is tijdelijk overbelast. Probeer het zo nog eens."
+        == "Mistral weigerde het verzoek vanwege een limiet. Blijft dit gebeuren, controleer dan je Mistral-abonnement."
     )
 
 
