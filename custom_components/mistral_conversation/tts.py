@@ -45,7 +45,7 @@ from homeassistant.components.tts import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MistralConfigEntry
 from ._streaming import (
@@ -114,7 +114,7 @@ def _silence_for_header(header: bytes) -> bytes:
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MistralConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Mistral AI TTS entity."""
     async_add_entities([MistralTTSEntity(config_entry)])

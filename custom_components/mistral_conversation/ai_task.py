@@ -15,7 +15,7 @@ from homeassistant.components.ai_task import (
     GenDataTaskResult,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -47,7 +47,7 @@ PARALLEL_UPDATES = 0
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MistralConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Mistral AI task entity."""
     async_add_entities([MistralAITaskEntity(config_entry)])
