@@ -395,8 +395,9 @@ After updating and restarting Home Assistant:
 ## FAQ
 
 **Q: STT or TTS fails after upgrading to Voxtral 3.**
-A: Check the Home Assistant log for the HTTP status and model or voice involved,
-and confirm that your Mistral API key has access to `voxtral-mini-transcribe-3-0`
+A: Check the Home Assistant log for the HTTP status and the request URL (for
+speech generation it also names the voice), and confirm that your Mistral API key
+has access to `voxtral-mini-transcribe-3-0`
 and `voxtral-mini-tts-3-0`. The integration does not automatically fall back to
 Voxtral 2. If voice loading failed, press **Refresh voices** after resolving the
 connection or account access issue.
