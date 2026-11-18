@@ -154,7 +154,7 @@ WEB_SEARCH_OPTIONS = {"model": "mistral-small-latest", "web_search": True}
 def _on_host_of(url: str, base: str) -> bool:
     """True for a v1 call under *base* or the v2 voice list on the same host."""
     host = base.removesuffix("/v1")
-    return url.startswith(f"{base}/") or url.startswith(f"{host}/v2/audio/voices")
+    return url.startswith((f"{base}/", f"{host}/v2/audio/voices"))
 
 
 async def _setup_with(hass: HomeAssistant, aioclient_mock, base: str, data: dict):
