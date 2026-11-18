@@ -265,12 +265,17 @@ def _convert_chat_log_to_messages(
                 all_have_results = all(tc.id in tool_results for tc in content.tool_calls)
                 if not all_have_results:
                     if content.content:
-                        messages.append({"role": "assistant", "content": str(content.content)})
+                        messages.append({
+                            "role": "assistant",
+                            "content": _assistant_content(
+                                str(content.content), content.native
+                            ),
+                        })
                     continue
 
                 msg: dict[str, Any] = {
                     "role": "assistant",
-                    "content": "",
+                    "content": _assistant_content("", content.native),
                     "tool_calls": [
                         {
                             "id": _to_mistral_id(str(tc.id)),
@@ -301,7 +306,12 @@ def _convert_chat_log_to_messages(
                             ),
                         })
             else:
-                messages.append({"role": "assistant", "content": str(content.content or "")})
+                messages.append({
+                    "role": "assistant",
+                    "content": _assistant_content(
+                        str(content.content or ""), content.native
+                    ),
+                })
 
     return messages
 
@@ -328,6 +338,65 @@ def _convert_chat_log_to_messages(
 # "can only concatenate str (not list)" inside chat_log.
 # ---------------------------------------------------------------------------
 
+def _split_content(content: Any) -> tuple[str, str]:
+    """Split a streamed ``delta.content`` into ``(answer, reasoning)`` text.
+
+    Usually a string. A model that reasons (for example Mistral Large 4) sends
+    a list of chunks instead: ``{"type": "thinking", ...}`` holds the reasoning
+    and ``{"type": "text", "text": ...}`` the answer. Only the answer is shown
+    and spoken; the reasoning is kept apart (see ``_reasoning_chunk``).
+    """
+    if isinstance(content, str):
+        return content, ""
+    answer: list[str] = []
+    reasoning: list[str] = []
+    if isinstance(content, list):
+        for chunk in content:
+            if not isinstance(chunk, dict):
+                continue
+            if chunk.get("type") == "text" and isinstance(chunk.get("text"), str):
+                answer.append(chunk["text"])
+            elif chunk.get("type") == "thinking":
+                inner = chunk.get("thinking")
+                if isinstance(inner, str):
+                    reasoning.append(inner)
+                elif isinstance(inner, list):
+                    reasoning.extend(
+                        part["text"]
+                        for part in inner
+                        if isinstance(part, dict) and isinstance(part.get("text"), str)
+                    )
+    return "".join(answer), "".join(reasoning)
+
+
+def _reasoning_chunk(text: str) -> dict[str, Any]:
+    """The reasoning as one Mistral ``thinking`` chunk, as it is replayed."""
+    return {
+        "type": "thinking",
+        "thinking": [{"type": "text", "text": text}],
+        "closed": True,
+    }
+
+
+def _assistant_content(text: str, native: Any) -> str | list[dict[str, Any]]:
+    """The ``content`` of an assistant message, with its reasoning replayed.
+
+    Mistral wants the reasoning of an earlier turn back in the history: dropping
+    it degrades the model's answers. ``native`` is the chunk stored on the chat
+    log entry by ``_async_stream_delta``; anything else means a plain string.
+    """
+    if (
+        isinstance(native, dict)
+        and native.get("type") == "thinking"
+        and isinstance(native.get("thinking"), list)
+    ):
+        chunks: list[dict[str, Any]] = [native]
+        if text:
+            chunks.append({"type": "text", "text": text})
+        return chunks
+    return text
+
+
 async def _async_stream_delta(
     resp: aiohttp.ClientResponse,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
@@ -335,6 +404,9 @@ async def _async_stream_delta(
 
     Yields, in order:
       {"role": "assistant"}           — start of a new assistant message
+      {"native": dict}                — the reasoning of a thinking model, at
+                                        most once, before the first content
+                                        or tool call (see _assistant_content)
       {"content": str}                — text content delta (zero or more)
       {"tool_calls": [llm.ToolInput]} — one completed tool call per yield
                                         (zero or more, after content)
@@ -344,12 +416,28 @@ async def _async_stream_delta(
     """
     buffer = b""
     current_tool_calls: dict[int, dict] = {}
+    # Reasoning of a thinking model, kept so the next request can replay it.
+    thinking_parts: list[str] = []
+    native_sent = False
 
     # Required first delta — see module-level note above.
     yield {"role": "assistant"}
 
+    def _native_delta() -> conversation.AssistantContentDeltaDict | None:
+        """The collected reasoning as a ``native`` delta, at most once.
+
+        HA raises when ``native`` is set twice for one message.
+        """
+        nonlocal native_sent
+        if native_sent or not thinking_parts:
+            return None
+        native_sent = True
+        return {"native": _reasoning_chunk("".join(thinking_parts))}
+
     async def _flush() -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
-        """Yield each buffered tool call as its own dict and clear the buffer."""
+        """Yield the reasoning and each buffered tool call, each as its own dict."""
+        if (native := _native_delta()) is not None:
+            yield native
         for tc in current_tool_calls.values():
             try:
                 args = json.loads(tc["arguments"]) if tc["arguments"] else {}
@@ -388,8 +476,13 @@ async def _async_stream_delta(
                 delta = choice.get("delta", {})
 
                 # Yield text delta — always a separate dict, never mixed with tool_calls
-                if delta.get("content"):
-                    yield {"content": str(delta["content"])}
+                text, thought = _split_content(delta.get("content"))
+                if thought:
+                    thinking_parts.append(thought)
+                if text:
+                    if (native := _native_delta()) is not None:
+                        yield native
+                    yield {"content": text}
 
                 # Accumulate streaming tool call fragments
                 if delta.get("tool_calls"):
@@ -413,6 +506,10 @@ async def _async_stream_delta(
                 if choice.get("finish_reason") in ("tool_calls", "stop") and current_tool_calls:
                     async for item in _flush():
                         yield item
+
+    # The stream ended without [DONE]: still hand over the reasoning.
+    if (native := _native_delta()) is not None:
+        yield native
 
 
 async def _filter_intercepted_tool(
@@ -555,7 +652,9 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
 
         # Web search needs an agent-capable model — it is only reachable through
         # the Conversations API.
-        web_search_available = web_search and supports_web_search(model)
+        web_search_available = web_search and supports_web_search(
+            model, self._runtime.client.region
+        )
 
         # Trigger phrases, when configured, are leading: a match goes straight to
         # the Conversations API and a non-match skips web search for this turn. An empty

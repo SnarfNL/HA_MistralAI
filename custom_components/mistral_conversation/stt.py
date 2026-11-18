@@ -35,8 +35,8 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 # BCP-47 code → display name (exposed via supported_languages so HA can
-# show a language picker in the Voice Assistants dialog). These are the 13
-# languages Voxtral transcription supports per the Mistral docs.
+# show a language picker in the Voice Assistants dialog). Keep the existing
+# language choices when upgrading to Voxtral 3, which supports more languages.
 LANGUAGE_OPTIONS: list[tuple[str, str]] = [
     ("ar", "Arabic"),
     ("de", "German"),

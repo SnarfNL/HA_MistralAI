@@ -1,6 +1,11 @@
 """Each platform end to end through HA, with the API mocked from fixtures."""
 from __future__ import annotations
 
+import io
+import json
+import wave
+
+import pytest
 import voluptuous as vol
 from homeassistant.components import ai_task, conversation, stt, tts
 from homeassistant.core import HomeAssistant
@@ -62,12 +67,20 @@ async def test_tts_batch_returns_mp3(
     )
     assert extension == "mp3"
     assert data.startswith(b"ID3")
+    assert aioclient_mock.mock_calls[-1][2] == {
+        "model": "voxtral-mini-tts-3-0",
+        "input": "Test.",
+        "voice_id": "en_paul_neutral",
+        "response_format": "mp3",
+    }
 
 
+@pytest.mark.parametrize("language", ["nl", ""])
 async def test_stt_transcribes(
     hass: HomeAssistant,
     setup_integration: MockConfigEntry,
     aioclient_mock: AiohttpClientMocker,
+    language: str,
 ) -> None:
     aioclient_mock.post(
         f"{BASE}/audio/transcriptions", text=load_fixture("transcription.json")
@@ -77,7 +90,7 @@ async def test_stt_transcribes(
     )
     assert engine is not None
     meta = stt.SpeechMetadata(
-        language="nl",
+        language=language,
         format=stt.AudioFormats.WAV,
         codec=stt.AudioCodecs.PCM,
         bit_rate=stt.AudioBitRates.BITRATE_16,
@@ -91,6 +104,17 @@ async def test_stt_transcribes(
     result = await engine.async_process_audio_stream(meta, audio())
     assert result.result is stt.SpeechResultState.SUCCESS
     assert result.text == "doe de keukenlamp aan"
+    form = aioclient_mock.mock_calls[-1][2]
+    fields = {options["name"]: value for options, _, value in form._fields}
+    assert fields["model"] == "voxtral-mini-transcribe-3-0"
+    if language:
+        assert fields["language"] == language
+    else:
+        assert "language" not in fields
+    assert "timestamp_granularities" not in fields
+    with wave.open(io.BytesIO(fields["file"]), "rb") as audio_file:
+        assert audio_file.getparams()[:3] == (1, 2, 16000)
+        assert audio_file.readframes(160) == bytes(320)
 
 
 def _sequence(*bodies: str):
@@ -115,7 +139,9 @@ async def test_conversation_tool_call_then_reply(
     assert await async_setup_component(hass, "homeassistant", {})
     assert await async_setup_component(hass, "intent", {})
     aioclient_mock.get(f"{BASE}/models", text=load_fixture("models.json"))
-    aioclient_mock.get(f"{BASE}/audio/voices", text=load_fixture("voices.json"))
+    aioclient_mock.get(
+        "https://api.mistral.ai/v2/audio/voices", text=load_fixture("voices.json")
+    )
     assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
     aioclient_mock.post(
@@ -133,6 +159,48 @@ async def test_conversation_tool_call_then_reply(
     assert roles[-2:] == ["assistant", "tool"]
 
 
+async def test_conversation_replays_the_reasoning_of_the_previous_turn(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """A thinking model's reasoning is not spoken, but Mistral gets it back (#93)."""
+
+    def frame(delta: dict) -> str:
+        payload = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
+        return f"data: {json.dumps(payload)}\n\n"
+
+    thinking = {
+        "type": "thinking",
+        "thinking": [{"type": "text", "text": "Ich denke nach"}],
+    }
+    reasoning_reply = (
+        frame({"content": [thinking]})
+        + frame({"content": [{"type": "text", "text": "Heute ist "}]})
+        + frame({"content": "es sonnig."})
+        + "data: [DONE]\n\n"
+    )
+    aioclient_mock.post(
+        f"{BASE}/chat/completions",
+        side_effect=_sequence(reasoning_reply, load_fixture("chat_text.sse")),
+    )
+    first = await conversation.async_converse(
+        hass, "wie ist heute das wetter", None, None, "nl", agent_id=AGENT
+    )
+    assert first.response.speech["plain"]["speech"] == "Heute ist es sonnig."
+    await conversation.async_converse(
+        hass, "und morgen?", first.conversation_id, None, "nl", agent_id=AGENT
+    )
+    messages = aioclient_mock.mock_calls[-1][2]["messages"]
+    assistant = [m["content"] for m in messages if m["role"] == "assistant"]
+    assert assistant == [
+        [
+            {**thinking, "closed": True},
+            {"type": "text", "text": "Heute ist es sonnig."},
+        ]
+    ]
+
+
 async def test_conversation_model_requested_web_search(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
@@ -145,7 +213,9 @@ async def test_conversation_model_requested_web_search(
     )
     assert await async_setup_component(hass, "homeassistant", {})
     aioclient_mock.get(f"{BASE}/models", text=load_fixture("models.json"))
-    aioclient_mock.get(f"{BASE}/audio/voices", text=load_fixture("voices.json"))
+    aioclient_mock.get(
+        "https://api.mistral.ai/v2/audio/voices", text=load_fixture("voices.json")
+    )
     assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
     search_call = load_fixture("chat_tool_call.sse").replace(
@@ -186,6 +256,13 @@ async def test_tts_stream_returns_wav(
     assert response.extension == "wav"
     assert audio.startswith(b"RIFF")
     assert len(audio) == 44 + 480
+    assert aioclient_mock.mock_calls[-1][2] == {
+        "model": "voxtral-mini-tts-3-0",
+        "input": "Dit is de eerste zin van het antwoord.",
+        "voice_id": "en_paul_neutral",
+        "response_format": "wav",
+        "stream": True,
+    }
 
 
 async def test_ai_task_text(

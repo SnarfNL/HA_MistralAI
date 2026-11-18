@@ -440,6 +440,68 @@ async def test_client_list_models_tolerates_missing_data() -> None:
     assert await client.list_models() == []
 
 
+async def test_voice_pagination_retries_on_v2_without_changing_speech_url() -> None:
+    page = {"data": [], "next_page_token": None}
+    client, _entry, session = _setup(
+        _Response(429), _Response(200, payload=page), _Response(200)
+    )
+    with patch.object(api, "_sleep", AsyncMock()):
+        assert await client.list_voices("cursor/+", 100) == page
+    async with client.speech({"input": "Hello"}, voice="voice_478", timeout=30):
+        pass
+    assert session.urls == [
+        "https://api.mistral.ai/v2/audio/voices",
+        "https://api.mistral.ai/v2/audio/voices",
+        "https://api.mistral.ai/v1/audio/speech",
+    ]
+    for method, kwargs in session.calls[:2]:
+        assert method == "GET"
+        assert kwargs["params"] == {
+            "page_size": 100, "page_token": "cursor/+", "type": "all"
+        }
+        assert kwargs["headers"]["Authorization"] == f"Bearer {API_KEY}"
+
+
+async def test_v2_voices_unauthorized_starts_reauth() -> None:
+    client, entry, _session = _setup(_Response(401))
+    try:
+        await client.list_voices(None, 100)
+    except HomeAssistantError as err:
+        assert err.translation_key == "invalid_auth"
+    else:
+        raise AssertionError("Expected a translated authentication error")
+    entry.async_start_reauth.assert_called_once()
+    assert client.errors[-1]["source"] == "tts"
+    assert client.errors[-1]["status"] == 401
+
+
+async def test_v2_voices_derive_the_host_from_the_clients_region() -> None:
+    for region, base in (
+        ("global", "https://api.mistral.ai/v1"),
+        ("eu", "https://api.eu.mistral.ai/v1"),
+        ("us", "https://api.us.mistral.ai/v1"),
+    ):
+        session = _Session(
+            _Response(200, payload={"data": [], "next_page_token": None}),
+            _Response(200),
+            _Response(200, payload={"data": []}),
+        )
+        entry = SimpleNamespace(entry_id="entry1", async_start_reauth=MagicMock())
+        client = MistralClient(
+            SimpleNamespace(), entry, session, API_KEY, deque(maxlen=10), region
+        )
+        # v1 and v2 calls use the same host: the one of the client's region.
+        await client.list_voices(None, 100)
+        async with client.speech({"input": "Hello"}, voice="voice_478", timeout=30):
+            pass
+        await client.list_models()
+        assert session.urls == [
+            f"{base.removesuffix('/v1')}/v2/audio/voices",
+            f"{base}/audio/speech",
+            f"{base}/models",
+        ]
+
+
 async def test_validate_key_results(hass, aioclient_mock) -> None:
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -457,3 +519,49 @@ async def test_validate_key_results(hass, aioclient_mock) -> None:
     aioclient_mock.clear_requests()
     aioclient_mock.get("https://api.mistral.ai/v1/models", exc=TimeoutError())
     assert (await MistralClient.validate_key(session, "k"))[0] == "cannot_connect"
+
+
+# ---------------------------------------------------------------------------
+# Regional inference (#84): the host follows the region
+# ---------------------------------------------------------------------------
+
+
+async def test_client_requests_go_to_the_regions_host() -> None:
+    for region, expected, base in (
+        (None, "global", "https://api.mistral.ai/v1"),
+        ("global", "global", "https://api.mistral.ai/v1"),
+        ("eu", "eu", "https://api.eu.mistral.ai/v1"),
+        ("us", "us", "https://api.us.mistral.ai/v1"),
+        ("mars", "global", "https://api.mistral.ai/v1"),
+    ):
+        session = _Session(_Response(200))
+        entry = SimpleNamespace(entry_id="entry1", async_start_reauth=MagicMock())
+        client = MistralClient(
+            SimpleNamespace(), entry, session, API_KEY, deque(maxlen=10), region
+        )
+        async with client.request("get", "/models", timeout=5, source="models"):
+            pass
+        assert client.region == expected
+        assert session.urls == [f"{base}/models"], region
+
+
+async def test_client_without_a_region_is_global() -> None:
+    client, _, session = _setup(_Response(200))
+    async with client.request("get", "/models", timeout=5, source="models"):
+        pass
+    assert client.region == "global"
+    assert session.urls == ["https://api.mistral.ai/v1/models"]
+
+
+async def test_validate_key_uses_the_selected_region(hass, aioclient_mock) -> None:
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    session = async_get_clientsession(hass)
+    aioclient_mock.get("https://api.eu.mistral.ai/v1/models", json={"data": []})
+    assert await MistralClient.validate_key(session, "k", "eu") == (None, "")
+    assert [str(call[1]) for call in aioclient_mock.mock_calls] == [
+        "https://api.eu.mistral.ai/v1/models"
+    ]
+    aioclient_mock.clear_requests()
+    aioclient_mock.get("https://api.us.mistral.ai/v1/models", status=401)
+    assert (await MistralClient.validate_key(session, "k", "us"))[0] == "invalid_auth"

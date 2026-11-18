@@ -6,7 +6,11 @@
         "title": "Connect to Mistral AI",
         "description": "Enter your Mistral AI API key. Create one at [console.mistral.ai]({api_key_url}).",
         "data": {
-          "api_key": "API Key"
+          "api_key": "API Key",
+          "api_region": "Region"
+        },
+        "data_description": {
+          "api_region": "Where Mistral processes your requests. 'Global' is the default. The EU and US options use regional inference: it costs 1.1× the normal price, only offers models hosted in that region (the model list can differ), and web search is not available. Your API key is checked on the region you choose."
         }
       },
       "reauth_confirm": {
@@ -17,10 +21,14 @@
         }
       },
       "reconfigure": {
-        "title": "Change the Mistral AI API key",
-        "description": "Enter a new API key. The integration restarts with it; your settings stay the same.",
+        "title": "Change the Mistral AI API key or region",
+        "description": "Enter the API key and choose the region. The integration restarts with them; your settings stay the same.",
         "data": {
-          "api_key": "API Key"
+          "api_key": "API Key",
+          "api_region": "Region"
+        },
+        "data_description": {
+          "api_region": "Where Mistral processes your requests. 'Global' is the default. The EU and US options use regional inference: it costs 1.1× the normal price, only offers models hosted in that region (the model list can differ), and web search is not available. Your API key is checked on the region you choose."
         }
       }
     },
@@ -32,7 +40,7 @@
     "abort": {
       "already_configured": "Mistral AI Conversation is already configured.",
       "reauth_successful": "Re-authentication successful.",
-      "reconfigure_successful": "The API key has been changed."
+      "reconfigure_successful": "The connection settings have been changed."
     }
   },
   "options": {
@@ -93,6 +101,13 @@
         "mistral-small-latest": "Mistral Small — balanced speed & quality (free-tier friendly)",
         "mistral-medium-latest": "Mistral Medium — needed for web search; ⚠️ paid tier, often rate-limited on free API keys",
         "mistral-large-latest": "Mistral Large — most capable; ⚠️ paid tier, often rate-limited on free API keys"
+      }
+    },
+    "api_region": {
+      "options": {
+        "global": "Global (api.mistral.ai)",
+        "eu": "EU (api.eu.mistral.ai)",
+        "us": "US (api.us.mistral.ai)"
       }
     }
   },

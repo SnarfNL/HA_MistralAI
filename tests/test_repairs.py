@@ -78,7 +78,9 @@ async def test_check_runs_in_the_background_at_setup(
     )
     assert await async_setup_component(hass, "homeassistant", {})
     aioclient_mock.get(f"{BASE}/models", text=load_fixture("models.json"))
-    aioclient_mock.get(f"{BASE}/audio/voices", text=load_fixture("voices.json"))
+    aioclient_mock.get(
+        "https://api.mistral.ai/v2/audio/voices", text=load_fixture("voices.json")
+    )
     assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
     assert _issue(hass, mock_config_entry) is not None
@@ -184,7 +186,9 @@ async def _stale_issue(hass, entry, aioclient_mock) -> None:
     await _set_model(hass, entry, "open-mistral-nemo")
     assert _issue(hass, entry) is not None
     aioclient_mock.clear_requests()
-    aioclient_mock.get(f"{BASE}/audio/voices", text=load_fixture("voices.json"))
+    aioclient_mock.get(
+        "https://api.mistral.ai/v2/audio/voices", text=load_fixture("voices.json")
+    )
     aioclient_mock.get(f"{BASE}/models", side_effect=_models_then_rate_limited())
     await _set_model(hass, entry, "mistral-large-latest")
 

@@ -6,7 +6,11 @@
         "title": "Se connecter à Mistral AI",
         "description": "Saisissez votre clé d'API Mistral. Créez en une sur [console.mistral.ai]({api_key_url}).",
         "data": {
-          "api_key": "Clé API"
+          "api_key": "Clé API",
+          "api_region": "Région"
+        },
+        "data_description": {
+          "api_region": "Où Mistral traite vos requêtes. « Mondial » est la valeur par défaut. Les options UE et États-Unis utilisent l'inférence régionale : elle coûte 1,1× le prix normal, ne propose que les modèles hébergés dans cette région (la liste des modèles peut différer) et la recherche web n'y est pas disponible. Votre clé API est vérifiée sur la région choisie."
         }
       },
       "reauth_confirm": {
@@ -17,10 +21,14 @@
         }
       },
       "reconfigure": {
-        "title": "Modifier la clé API Mistral AI",
-        "description": "Saisissez une nouvelle clé API. L'intégration redémarre avec cette clé ; vos paramètres restent inchangés.",
+        "title": "Modifier la clé API ou la région de Mistral AI",
+        "description": "Saisissez la clé API et choisissez la région. L'intégration redémarre avec ces valeurs ; vos paramètres restent inchangés.",
         "data": {
-          "api_key": "Clé API"
+          "api_key": "Clé API",
+          "api_region": "Région"
+        },
+        "data_description": {
+          "api_region": "Où Mistral traite vos requêtes. « Mondial » est la valeur par défaut. Les options UE et États-Unis utilisent l'inférence régionale : elle coûte 1,1× le prix normal, ne propose que les modèles hébergés dans cette région (la liste des modèles peut différer) et la recherche web n'y est pas disponible. Votre clé API est vérifiée sur la région choisie."
         }
       }
     },
@@ -32,7 +40,7 @@
     "abort": {
       "already_configured": "Mistral AI Conversation est déjà configuré.",
       "reauth_successful": "Ré-identification effectuée.",
-      "reconfigure_successful": "La clé API a été modifiée."
+      "reconfigure_successful": "Les paramètres de connexion ont été modifiés."
     }
   },
   "options": {
@@ -93,6 +101,13 @@
         "mistral-small-latest": "Mistral Small — équilibre vitesse/qualité (niveau gratuit)",
         "mistral-medium-latest": "Mistral Medium — requis pour la recherche web ; ⚠️ niveau payant, souvent limité en débit avec une clé gratuite",
         "mistral-large-latest": "Mistral Large — le plus performant ; ⚠️ niveau payant, souvent limité en débit avec une clé gratuite"
+      }
+    },
+    "api_region": {
+      "options": {
+        "global": "Mondial (api.mistral.ai)",
+        "eu": "UE (api.eu.mistral.ai)",
+        "us": "États-Unis (api.us.mistral.ai)"
       }
     }
   },
