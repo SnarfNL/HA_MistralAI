@@ -565,3 +565,242 @@ async def test_validate_key_uses_the_selected_region(hass, aioclient_mock) -> No
     aioclient_mock.clear_requests()
     aioclient_mock.get("https://api.us.mistral.ai/v1/models", status=401)
     assert (await MistralClient.validate_key(session, "k", "us"))[0] == "invalid_auth"
+
+
+# ---------------------------------------------------------------------------
+# A final 429 is logged with Mistral's own code and message
+# (an account without API access gets code 1300 on every call)
+# ---------------------------------------------------------------------------
+
+NO_ACCESS_BODY = json.dumps(
+    {
+        "object": "error",
+        "message": "Rate limit exceeded",
+        "type": "rate_limited",
+        "param": None,
+        "code": "1300",
+        "raw_status_code": 429,
+    }
+)
+
+
+class RateLimitLoggingTests(unittest.IsolatedAsyncioTestCase):
+    async def _final_429(self, response: _Response, **kwargs):
+        """Send one request that ends in a 429; return (client, error, log text)."""
+        client, _, _ = _setup(response)
+        error = None
+        with self.assertLogs(api._LOGGER, "DEBUG") as logs:
+            try:
+                async with client.request(
+                    "post", "/x", timeout=5, source="tts", log_context="voice=v1", **kwargs
+                ):
+                    pass
+            except HomeAssistantError as err:
+                error = err
+        return client, error, "\n".join(logs.output)
+
+    async def test_logs_code_message_and_retry_after(self) -> None:
+        # A long Retry-After is not waited for, so this 429 is the final one.
+        response = _Response(429, {"Retry-After": "30"}, body=NO_ACCESS_BODY)
+        _, error, output = await self._final_429(response)
+        self.assertEqual(error.translation_key, "rate_limited")
+        self.assertEqual(error.mistral_code, "1300")
+        warnings = [line for line in output.splitlines() if line.startswith("WARNING")]
+        self.assertEqual(len(warnings), 1)
+        for expected in (
+            "HTTP 429",
+            URL,
+            "voice=v1",
+            "code=1300",
+            "message=Rate limit exceeded",
+            "retry-after=30",
+        ):
+            self.assertIn(expected, warnings[0])
+
+    async def test_log_has_no_key_and_no_headers(self) -> None:
+        response = _Response(429, {"Retry-After": "30"}, body=NO_ACCESS_BODY)
+        _, _, output = await self._final_429(response)
+        self.assertNotIn("Bearer", output)
+        self.assertNotIn(API_KEY, output)
+        self.assertNotIn("Authorization", output)
+
+    async def test_diagnostics_record_holds_the_code_and_nothing_else(self) -> None:
+        response = _Response(429, {"Retry-After": "30"}, body=NO_ACCESS_BODY)
+        client, _, _ = await self._final_429(response)
+        [record] = client.errors
+        self.assertEqual(set(record), {"time", "source", "status", "error", "code"})
+        self.assertEqual(record["code"], "1300")
+        self.assertEqual(record["status"], 429)
+        self.assertEqual(record["error"], "rate_limited")
+        text = str(record)
+        self.assertNotIn("Rate limit exceeded", text)
+        self.assertNotIn("mistral.ai", text)
+        self.assertNotIn(API_KEY, text)
+
+    async def test_record_code_is_none_without_one(self) -> None:
+        client, _, _ = _setup()
+        client.record("tts", mistral_error("api_error", status="404"), 404)
+        client.record_note("setup", "something")
+        self.assertEqual([r["code"] for r in client.errors], [None, None])
+
+    async def test_unparseable_body_still_raises_and_logs_a_placeholder(self) -> None:
+        for body in ("<html>gateway</html>", "[1, 2]", TimeoutError()):
+            with self.subTest(body=repr(body)):
+                response = _Response(429, {"Retry-After": "30"}, body=body)
+                client, error, output = await self._final_429(response)
+                self.assertEqual(error.translation_key, "rate_limited")
+                self.assertIsNone(error.mistral_code)
+                self.assertIn("code=<unavailable>", output)
+                self.assertIn("message=<unavailable>", output)
+                self.assertNotIn("gateway", output)
+                self.assertIsNone(client.errors[0]["code"])
+
+    async def test_missing_retry_after_is_marked(self) -> None:
+        # Without Retry-After the request is retried twice; the last 429 is logged.
+        client, _, _ = _setup(
+            _Response(429, body=NO_ACCESS_BODY), _Response(429), _Response(429)
+        )
+        with (
+            patch.object(api, "_sleep", AsyncMock()),
+            self.assertLogs(api._LOGGER, "WARNING") as logs,
+            self.assertRaises(HomeAssistantError),
+        ):
+            async with client.request("post", "/x", timeout=5, source="tts"):
+                pass
+        self.assertIn("retry-after=<none>", "\n".join(logs.output))
+
+    async def test_parsed_fields_are_cut_and_single_line(self) -> None:
+        body = json.dumps({"code": 1300, "message": "x" * 1000 + "\nsecond line"})
+        _, error, output = await self._final_429(
+            _Response(429, {"Retry-After": "30"}, body=body)
+        )
+        self.assertEqual(error.mistral_code, "1300")  # an int code becomes text
+        self.assertNotIn("x" * 201, output)
+        self.assertNotIn("second line", output)
+
+    async def test_a_lowered_log_level_stays_lowered(self) -> None:
+        _, _, output = await self._final_429(
+            _Response(429, {"Retry-After": "30"}, body=NO_ACCESS_BODY),
+            log_level=logging.DEBUG,
+        )
+        self.assertFalse(any(line.startswith("WARNING") for line in output.splitlines()))
+        self.assertIn("code=1300", output)
+
+
+# ---------------------------------------------------------------------------
+# validate_key: GET /models accepts a key without API access, so one tiny
+# chat completion on the same host decides
+# ---------------------------------------------------------------------------
+
+MODELS_WITH_DEFAULT = {
+    "data": [{"id": "ministral-8b-2410", "aliases": ["ministral-8b-latest"]}]
+}
+MODELS_WITH_FALLBACK = {
+    "data": [{"id": "ministral-3b-2410", "aliases": ["ministral-3b-latest"]}]
+}
+CHAT_URL = "https://api.mistral.ai/v1/chat/completions"
+MODELS_URL = "https://api.mistral.ai/v1/models"
+
+
+async def _validate(hass, **kwargs) -> tuple[str | None, str]:
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    session = async_get_clientsession(hass)
+    return await MistralClient.validate_key(session, API_KEY, **kwargs)
+
+
+def _chat_calls(aioclient_mock) -> list:
+    return [c for c in aioclient_mock.mock_calls if str(c[1]) == CHAT_URL]
+
+
+async def test_validate_key_probe_ok_is_valid(hass, aioclient_mock) -> None:
+    aioclient_mock.get(MODELS_URL, json=MODELS_WITH_DEFAULT)
+    aioclient_mock.post(CHAT_URL, json={"choices": []})
+    assert await _validate(hass) == (None, "")
+    [(_, _, body, headers)] = _chat_calls(aioclient_mock)
+    assert body == {
+        "model": "ministral-8b-latest",
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    assert headers["Authorization"] == f"Bearer {API_KEY}"
+
+
+async def test_validate_key_probe_429_is_no_api_access(hass, aioclient_mock) -> None:
+    aioclient_mock.get(MODELS_URL, json=MODELS_WITH_DEFAULT)
+    aioclient_mock.post(CHAT_URL, status=429, json=json.loads(NO_ACCESS_BODY))
+    result = await _validate(hass)
+    assert result == ("no_api_access", "HTTP 429")
+    assert API_KEY not in result[1]
+
+
+async def test_validate_key_probe_401_is_invalid_auth(hass, aioclient_mock) -> None:
+    aioclient_mock.get(MODELS_URL, json=MODELS_WITH_DEFAULT)
+    aioclient_mock.post(CHAT_URL, status=401)
+    assert await _validate(hass) == ("invalid_auth", "HTTP 401")
+
+
+async def test_validate_key_probe_other_failures_are_cannot_connect(
+    hass, aioclient_mock
+) -> None:
+    aioclient_mock.get(MODELS_URL, json=MODELS_WITH_DEFAULT)
+    aioclient_mock.post(CHAT_URL, status=500)
+    assert await _validate(hass) == ("cannot_connect", "HTTP 500")
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(MODELS_URL, json=MODELS_WITH_DEFAULT)
+    aioclient_mock.post(CHAT_URL, exc=TimeoutError())
+    error, detail = await _validate(hass)
+    assert error == "cannot_connect"
+    assert API_KEY not in detail
+
+
+async def test_validate_key_probe_uses_the_fallback_model(hass, aioclient_mock) -> None:
+    aioclient_mock.get(MODELS_URL, json=MODELS_WITH_FALLBACK)
+    aioclient_mock.post(CHAT_URL, json={})
+    assert await _validate(hass) == (None, "")
+    [(_, _, body, _)] = _chat_calls(aioclient_mock)
+    assert body["model"] == "ministral-3b-latest"
+
+
+async def test_validate_key_without_a_known_model_sends_no_probe(
+    hass, aioclient_mock
+) -> None:
+    for listing in (
+        {"data": [{"id": "mistral-large-2512", "aliases": ["mistral-large-latest"]}]},
+        {"data": []},
+        {"data": "odd"},
+        {"object": "list"},
+        ["not", "an", "object"],
+    ):
+        aioclient_mock.clear_requests()
+        aioclient_mock.mock_calls.clear()
+        aioclient_mock.get(MODELS_URL, json=listing)
+        assert await _validate(hass) == (None, "")
+        assert [str(c[1]) for c in aioclient_mock.mock_calls] == [MODELS_URL]
+
+
+async def test_validate_key_unreadable_models_list_sends_no_probe(
+    hass, aioclient_mock
+) -> None:
+    aioclient_mock.get(MODELS_URL, text="not json")
+    assert await _validate(hass) == (None, "")
+    assert [str(c[1]) for c in aioclient_mock.mock_calls] == [MODELS_URL]
+
+
+async def test_validate_key_probe_can_be_skipped(hass, aioclient_mock) -> None:
+    aioclient_mock.get(MODELS_URL, json=MODELS_WITH_DEFAULT)
+    assert await _validate(hass, probe_chat=False) == (None, "")
+    assert [str(c[1]) for c in aioclient_mock.mock_calls] == [MODELS_URL]
+
+
+async def test_validate_key_probe_goes_to_the_selected_region(
+    hass, aioclient_mock
+) -> None:
+    eu = "https://api.eu.mistral.ai/v1"
+    aioclient_mock.get(f"{eu}/models", json=MODELS_WITH_DEFAULT)
+    aioclient_mock.post(f"{eu}/chat/completions", status=429, json={})
+    assert (await _validate(hass, region="eu"))[0] == "no_api_access"
+    assert [str(c[1]) for c in aioclient_mock.mock_calls] == [
+        f"{eu}/models",
+        f"{eu}/chat/completions",
+    ]

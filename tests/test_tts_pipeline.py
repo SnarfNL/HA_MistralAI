@@ -20,6 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.mistral_conversation import tts as tts_module
 from custom_components.mistral_conversation._streaming import apply_gain
+from custom_components.mistral_conversation.api import mistral_error
 from custom_components.mistral_conversation.const import (
     TTS_INTER_SENTENCE_SILENCE_BYTES,
     TTS_WAV_HEADER_SIZE,
@@ -154,6 +155,125 @@ class PipelinedStreamTests(unittest.IsolatedAsyncioTestCase):
         out = await _collect(entity, TEXTS[0], TEXTS[1])
         # 300 ms at 16 kHz, mono, 16-bit = 4800 samples * 2 bytes.
         self.assertEqual(out, header_16k + PCM[0] + bytes(9600) + PCM[1])
+
+
+class NoAudioHintTests(unittest.IsolatedAsyncioTestCase):
+    """The "no audio" error points at the real cause, not always at the voice ID."""
+
+    async def _error_text(self, make_error) -> str:
+        entity = _make_entity()
+
+        async def fail(text, voice, out_queue, idx=None):
+            raise make_error()
+
+        entity._stream_one_sentence_into = fail
+        with self.assertRaises(HomeAssistantError) as ctx:
+            await _collect(entity, *TEXTS)
+        return str(ctx.exception)
+
+    async def test_rate_limited_points_at_api_access(self) -> None:
+        text = await self._error_text(lambda: mistral_error("rate_limited"))
+        self.assertIn("no audio for any sentence", text)
+        self.assertIn("last error:", text)
+        self.assertIn("API access (pay-as-you-go with credits)", text)
+        self.assertNotIn("voice ID", text)
+
+    async def test_invalid_auth_points_at_the_key(self) -> None:
+        text = await self._error_text(lambda: mistral_error("invalid_auth"))
+        self.assertIn("Check the API key.", text)
+        self.assertNotIn("voice ID", text)
+
+    async def test_api_error_400_404_422_point_at_the_voice(self) -> None:
+        for status in ("400", "404", "422"):
+            with self.subTest(status=status):
+                text = await self._error_text(
+                    lambda status=status: mistral_error("api_error", status=status)
+                )
+                self.assertIn("Check the voice ID.", text)
+
+    async def test_api_error_500_points_at_the_log(self) -> None:
+        text = await self._error_text(lambda: mistral_error("api_error", status="500"))
+        self.assertIn("See the Home Assistant log.", text)
+        self.assertNotIn("voice ID", text)
+
+    async def test_any_other_error_points_at_the_log(self) -> None:
+        text = await self._error_text(lambda: HomeAssistantError("boom"))
+        self.assertIn("See the Home Assistant log.", text)
+
+    def test_hint_without_an_error(self) -> None:
+        self.assertEqual(tts_module._no_audio_hint(None), "See the Home Assistant log.")
+
+
+class UnrecoverableErrorStopsTheStreamTests(unittest.IsolatedAsyncioTestCase):
+    """A rate limit or bad key cannot be fixed by the next sentence: stop sending."""
+
+    def _entity(self, behaviour: dict[str, BaseException | bytes]):
+        entity = _make_entity()
+        calls: list[str] = []
+
+        async def fake(text, voice, out_queue, idx=None):
+            calls.append(text)
+            outcome = behaviour[text]
+            if isinstance(outcome, BaseException):
+                raise outcome
+            await out_queue.put(("header", HEADER))
+            await out_queue.put(outcome)
+
+        entity._stream_one_sentence_into = fake
+        return entity, calls
+
+    async def test_unrecoverable_error_on_sentence_0_sends_no_more_requests(self) -> None:
+        for key in ("rate_limited", "invalid_auth"):
+            with self.subTest(key=key):
+                entity, calls = self._entity(
+                    {
+                        TEXTS[0]: mistral_error(key),
+                        TEXTS[1]: PCM[1],
+                        TEXTS[2]: PCM[2],
+                    }
+                )
+                with self.assertRaises(HomeAssistantError) as ctx:
+                    await _collect(entity, *TEXTS)
+                self.assertEqual(calls, [TEXTS[0]])
+                self.assertIn("no audio for any sentence", str(ctx.exception))
+
+    async def test_the_producer_stops_dispatching_sentences(self) -> None:
+        entity, calls = self._entity(
+            {TEXTS[0]: mistral_error("rate_limited"), TEXTS[1]: PCM[1], TEXTS[2]: PCM[2]}
+        )
+
+        async def slow_gen():
+            for sentence in TEXTS:
+                yield sentence + " "
+                await asyncio.sleep(0)  # let the sentence just sent run
+
+        async def run() -> None:
+            async for _ in entity._pipelined_stream(slow_gen(), "v"):
+                pass
+
+        with self.assertRaises(HomeAssistantError):
+            await asyncio.wait_for(run(), timeout=5)
+        self.assertEqual(calls, [TEXTS[0]])
+
+    async def test_audio_already_delivered_is_kept(self) -> None:
+        entity, calls = self._entity(
+            {TEXTS[0]: PCM[0], TEXTS[1]: mistral_error("rate_limited"), TEXTS[2]: PCM[2]}
+        )
+        out = await _collect(entity, *TEXTS)
+        self.assertEqual(out, HEADER + PCM[0])
+        self.assertEqual(calls, [TEXTS[0], TEXTS[1]])
+
+    async def test_recoverable_error_on_sentence_0_lets_the_others_play(self) -> None:
+        entity, calls = self._entity(
+            {
+                TEXTS[0]: mistral_error("api_error", status="500"),
+                TEXTS[1]: PCM[1],
+                TEXTS[2]: PCM[2],
+            }
+        )
+        out = await _collect(entity, *TEXTS)
+        self.assertEqual(out, HEADER + PCM[1] + SILENCE + PCM[2])
+        self.assertEqual(calls, TEXTS)
 
 
 class SilenceForHeaderTests(unittest.TestCase):

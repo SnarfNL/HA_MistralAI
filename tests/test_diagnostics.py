@@ -1,16 +1,20 @@
 """Diagnostics download (MA-14): settings, versions, last errors — never the key."""
 from __future__ import annotations
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMocker,
+)
 
 from custom_components.mistral_conversation.api import mistral_error
 from custom_components.mistral_conversation.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
-from .conftest import API_KEY
+from .conftest import API_KEY, BASE
 
 
 async def test_diagnostics_content(
@@ -54,3 +58,34 @@ async def test_diagnostics_keeps_last_ten_errors(
         )
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert len(diag["recent_errors"]) == 10
+
+
+async def test_diagnostics_record_of_a_429_holds_the_code_only(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    entry = setup_integration
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"{BASE}/models",
+        status=429,
+        headers={"Retry-After": "30"},
+        json={"message": "Rate limit exceeded", "type": "rate_limited", "code": "1300"},
+    )
+    with pytest.raises(HomeAssistantError):
+        async with entry.runtime_data.client.request(
+            "get", "/models", timeout=5, source="setup"
+        ):
+            pass
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    record = diag["recent_errors"][-1]
+    assert record["code"] == "1300"
+    assert record["status"] == 429
+    assert record["error"] == "rate_limited"
+    assert set(record) == {"time", "source", "status", "error", "code"}
+    text = str(diag)
+    assert "Rate limit exceeded" not in text
+    assert "api.mistral.ai/v1/models" not in text
+    assert "Retry-After" not in text
+    assert API_KEY not in text

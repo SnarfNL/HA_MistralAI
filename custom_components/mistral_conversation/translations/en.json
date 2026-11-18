@@ -35,6 +35,7 @@
     "error": {
       "cannot_connect": "Unable to connect. Check your internet connection.",
       "invalid_auth": "Invalid API key. Please verify at console.mistral.ai.",
+      "no_api_access": "Mistral refused a test request (HTTP 429). Your Mistral account probably has no API access: turn on pay-as-you-go and add credits in the Mistral console, then try again.",
       "unknown": "Unexpected error. Check the Home Assistant logs for details."
     },
     "abort": {
@@ -128,7 +129,7 @@
       "message": "The Mistral API key is invalid. Please enter it again in Home Assistant."
     },
     "rate_limited": {
-      "message": "Mistral is temporarily overloaded. Try again in a moment."
+      "message": "Mistral refused the request because of a rate limit. If this keeps happening, check your Mistral billing."
     },
     "cannot_connect": {
       "message": "Mistral can't be reached right now."
@@ -156,6 +157,10 @@
     }
   },
   "issues": {
+    "api_access_refused": {
+      "title": "Mistral keeps refusing requests",
+      "description": "Every request to Mistral has failed with a rate-limit error (HTTP 429) for a few minutes. Since November 2026, Mistral's Free plan has no API access: turn on pay-as-you-go and add credits in the Mistral console, then test your key. Real overload passes on its own; this message disappears after the next successful request."
+    },
     "model_retired": {
       "title": "Mistral model {model} is no longer available",
       "fix_flow": {

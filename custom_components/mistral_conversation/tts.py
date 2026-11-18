@@ -66,6 +66,7 @@ from ._streaming import (
 from ._voices import build_voice_list
 from .api import (
     describe_error,
+    is_unrecoverable,
     mistral_error,
     read_json,
     translate_stream,
@@ -117,6 +118,23 @@ def _silence_for_header(header: bytes) -> bytes:
         return _INTER_SENTENCE_SILENCE
     frame_bytes = channels * bits // 8
     return bytes(sample_rate * _INTER_SENTENCE_SILENCE_MS // 1000 * frame_bytes)
+
+
+def _no_audio_hint(err: BaseException | None) -> str:
+    """What to check when no sentence delivered audio, judged by the last error."""
+    key = getattr(err, "translation_key", None)
+    if key == "rate_limited":
+        return (
+            "Check that your Mistral account has API access "
+            "(pay-as-you-go with credits)."
+        )
+    if key == "invalid_auth":
+        return "Check the API key."
+    if key == "api_error":
+        placeholders = getattr(err, "translation_placeholders", None) or {}
+        if placeholders.get("status") in ("400", "404", "422"):
+            return "Check the voice ID."
+    return "See the Home Assistant log."
 
 
 def _boost_wav(wav_bytes: bytes, gain_db: float) -> bytes | None:
@@ -435,11 +453,18 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
           sentence is skipped; if sentences were sent but none delivered
           any audio, a HomeAssistantError is raised. If no sentence was sent
           at all (e.g. emoji-only reply), the stream ends silently.
+        * A sentence that fails with an error no other sentence can survive
+          (``is_unrecoverable``: invalid key, rate limit) stops the pipeline:
+          nothing new is dispatched and queued sentences are not started. The
+          error then ends the stream like any "no audio" case.
         """
         sem = asyncio.Semaphore(TTS_MAX_INFLIGHT_SENTENCES)
         outer_q: asyncio.Queue[asyncio.Queue[Any] | None] = asyncio.Queue()
         fetch_tasks: list[asyncio.Task] = []
         end_marker = object()
+        # Set when a sentence fails with an error no later sentence can
+        # survive (invalid key, rate limit): nothing more is sent to Mistral.
+        stop = asyncio.Event()
 
         async def fetch_sentence(idx: int, text: str) -> asyncio.Queue:
             # Unbounded queue: avoids a cancellation-time deadlock where a
@@ -454,6 +479,9 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
             async def worker() -> None:
                 try:
                     async with sem:
+                        if stop.is_set():
+                            # Queued behind a sentence that failed for good.
+                            return
                         _LOGGER.debug(
                             "TTS sentence %d START (%d chars)",
                             idx,
@@ -465,6 +493,8 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
                     raise
                 except Exception as err:  # noqa: BLE001 - forward any per-sentence failure to the consumer instead of crashing the pipeline
                     _LOGGER.warning("TTS sentence %d failed: %s", idx, err)
+                    if isinstance(err, HomeAssistantError) and is_unrecoverable(err):
+                        stop.set()
                     await inner.put(err)
                 finally:
                     await inner.put(end_marker)
@@ -477,11 +507,15 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
                 token_buffer = ""
                 next_idx = 0
                 async for token in message_gen:
+                    if stop.is_set():
+                        return
                     if not token:
                         continue
                     token_buffer += token
                     sentences, token_buffer = pop_complete_sentences(token_buffer, TTS_MIN_SENTENCE_CHARS)
                     for sentence in sentences:
+                        if stop.is_set():
+                            return
                         inner = await fetch_sentence(next_idx, sentence)
                         await outer_q.put(inner)
                         next_idx += 1
@@ -492,7 +526,7 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
                 # skips the min-length gate that the loop above uses, since
                 # this is the last chance to emit whatever's left.
                 trailing = token_buffer.strip()
-                if trailing and has_speakable_content(trailing):
+                if trailing and has_speakable_content(trailing) and not stop.is_set():
                     inner = await fetch_sentence(next_idx, trailing)
                     await outer_q.put(inner)
             finally:
@@ -515,7 +549,7 @@ class MistralTTSEntity(MistralEntity, TextToSpeechEntity):
                         detail = f" (last error: {last_error})" if last_error else ""
                         raise HomeAssistantError(
                             "Mistral TTS returned no audio for any sentence"
-                            f"{detail}. Check the voice ID and the Home Assistant log."
+                            f"{detail}. {_no_audio_hint(last_error)}"
                         )
                     return
                 sentences_sent += 1

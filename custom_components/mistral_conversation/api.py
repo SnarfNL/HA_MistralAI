@@ -7,7 +7,10 @@ errors are handled the same way everywhere:
 * network errors and timeouts while sending become ``cannot_connect``;
 * a 401 starts the reauth flow and becomes ``invalid_auth``;
 * a 429 is retried at most twice (short backoff, or ``Retry-After`` when it is
-  short enough), then becomes ``rate_limited``;
+  short enough), then becomes ``rate_limited``. Mistral's own error code and
+  message are logged: since November 2026 an account without API access (Free
+  plan, or no credits) gets a 429 with code 1300 on every call. Many 429s in a
+  row raise the ``api_access_refused`` repair issue;
 * any other error status becomes ``api_error``. The response body is logged,
   never shown to the user.
 
@@ -28,6 +31,7 @@ includes the request headers, and those hold the API key. Use
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections import deque
 from collections.abc import AsyncIterator, Callable
@@ -36,16 +40,18 @@ from contextlib import (
     AsyncExitStack,
     asynccontextmanager,
 )
+from datetime import datetime, timedelta
 from typing import Any
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.util import dt as dt_util
 
-from .const import DEFAULT_API_REGION, DOMAIN, REGION_BASES, api_base
+from .const import DEFAULT_API_REGION, DEFAULT_MODEL, DOMAIN, REGION_BASES, api_base
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,6 +62,18 @@ RETRY_DELAYS: tuple[float, ...] = (1.0, 2.0)
 MAX_RETRY_AFTER = 5.0
 # Errors that another call to Mistral in the same turn cannot fix.
 UNRECOVERABLE_KEYS = frozenset({"invalid_auth", "rate_limited"})
+# The repair issue for an account Mistral keeps refusing: this many 429s in a
+# row (after retries, no success in between) spread over at least this long.
+# A real overload passes on its own within seconds.
+REFUSED_ISSUE_FAILURES = 5
+REFUSED_ISSUE_MIN_SPAN = timedelta(minutes=2)
+REFUSED_ISSUE_LEARN_MORE = (
+    "https://github.com/SnarfNL/HA_MistralAI#mistral-account-and-billing"
+)
+# Parsed fields of a 429 body are cut to this length before they are logged.
+_MAX_LOGGED_FIELD = 200
+# Model for the key check's test request when the default is not on the account.
+_PROBE_FALLBACK_MODEL = "ministral-3b-latest"
 # Last resort when even the translations cannot be loaded.
 _FALLBACK_MESSAGE = "Something went wrong talking to Mistral."
 
@@ -63,9 +81,19 @@ _FALLBACK_MESSAGE = "Something went wrong talking to Mistral."
 _sleep = asyncio.sleep
 
 
-def mistral_error(key: str, **placeholders: str) -> HomeAssistantError:
+class MistralAPIError(HomeAssistantError):
+    """A translated error from this integration.
+
+    ``mistral_code`` is the short error code Mistral sent with a 429 (for
+    example ``"1300"``), or None. It is kept for the diagnostics file.
+    """
+
+    mistral_code: str | None = None
+
+
+def mistral_error(key: str, **placeholders: str) -> MistralAPIError:
     """Return a translated HomeAssistantError for *key* (see strings.json)."""
-    return HomeAssistantError(
+    return MistralAPIError(
         translation_domain=DOMAIN,
         translation_key=key,
         translation_placeholders=placeholders or None,
@@ -84,6 +112,42 @@ def describe_error(err: BaseException) -> str:
     ``ClientResponseError`` also holds the request headers, API key included.
     """
     return f"{type(err).__name__}: {err}"
+
+
+def api_access_issue_id(entry_id: str) -> str:
+    """Repair issue id for the "Mistral keeps refusing requests" issue."""
+    return f"api_access_refused_{entry_id}"
+
+
+def _clean(value: Any) -> str | None:
+    """A short, single-line version of a parsed body field, or None."""
+    if not isinstance(value, str | int) or isinstance(value, bool):
+        return None
+    text = " ".join(str(value).split())
+    return text[:_MAX_LOGGED_FIELD] or None
+
+
+async def _read_error_fields(resp: Any) -> tuple[str | None, str | None, str | None]:
+    """``(code, message, type)`` from a Mistral error body; None when unavailable.
+
+    Reads the body the same safe way as any other error status. Only these
+    three parsed fields are returned, never the raw body.
+    """
+    try:
+        body = await resp.text()
+    except (aiohttp.ClientError, TimeoutError):
+        return None, None, None
+    try:
+        data = json.loads(body)
+    except (TypeError, ValueError):
+        return None, None, None
+    if not isinstance(data, dict):
+        return None, None, None
+    return (
+        _clean(data.get("code")),
+        _clean(data.get("message")),
+        _clean(data.get("type")),
+    )
 
 
 def _retry_delay(resp: Any, attempt: int) -> float | None:
@@ -114,7 +178,24 @@ async def _raise_for_status(
         entry.async_start_reauth(hass)
         raise mistral_error("invalid_auth")
     if resp.status == 429:
-        raise mistral_error("rate_limited")
+        code, message, error_type = await _read_error_fields(resp)
+        headers = getattr(resp, "headers", None) or {}
+        retry_after = _clean(headers.get("Retry-After"))
+        _LOGGER.log(
+            # A lowered level (best-effort calls) stays lowered.
+            min(log_level, logging.WARNING),
+            "Mistral API HTTP 429 for %s%s: code=%s type=%s message=%s"
+            " retry-after=%s",
+            url,
+            f" ({log_context})" if log_context else "",
+            code or "<unavailable>",
+            error_type or "<unavailable>",
+            message or "<unavailable>",
+            retry_after or "<none>",
+        )
+        err = mistral_error("rate_limited")
+        err.mistral_code = code
+        raise err
     try:
         body = await resp.text()
     except (aiohttp.ClientError, TimeoutError) as err:
@@ -159,6 +240,10 @@ class MistralClient:
         self._auth = {"Authorization": f"Bearer {api_key}"}
         self._json_headers = {**self._auth, "Content-Type": "application/json"}
         self.errors = errors
+        # Consecutive rate_limited failures (see _note_rate_limited).
+        self._refused_count = 0
+        self._refused_since: datetime | None = None
+        self._refused_issue_raised = False
 
     def _api_url(self, path: str, version: str) -> str:
         """Use the same (regional) host for every API version."""
@@ -167,15 +252,23 @@ class MistralClient:
     def record(
         self, source: str, err: BaseException, status: int | None = None
     ) -> None:
-        """Remember an error for diagnostics: never a body, URL or header."""
+        """Remember an error for diagnostics: never a body, URL or header.
+
+        ``code`` is Mistral's short error code when it sent one (a 429).
+        """
         self.record_note(
             source,
             getattr(err, "translation_key", None) or type(err).__name__,
             status,
+            getattr(err, "mistral_code", None),
         )
 
     def record_note(
-        self, source: str, note: str, status: int | None = None
+        self,
+        source: str,
+        note: str,
+        status: int | None = None,
+        code: str | None = None,
     ) -> None:
         """Remember a problem that is not an exception (a short fixed label)."""
         self.errors.append(
@@ -184,8 +277,45 @@ class MistralClient:
                 "source": source,
                 "status": status,
                 "error": note,
+                "code": code,
             }
         )
+
+    def _note_success(self) -> None:
+        """A request succeeded: forget earlier 429s and clear the repair issue."""
+        self._refused_count = 0
+        self._refused_since = None
+        if self._refused_issue_raised:
+            self._refused_issue_raised = False
+            ir.async_delete_issue(
+                self._hass, DOMAIN, api_access_issue_id(self._entry.entry_id)
+            )
+
+    def _note_rate_limited(self) -> None:
+        """A request ended in rate_limited (after its retries).
+
+        Raise the repair issue once there are enough in a row, spread over
+        enough time: a real overload does not last minutes.
+        """
+        now = dt_util.utcnow()
+        if self._refused_since is None:
+            self._refused_since = now
+        self._refused_count += 1
+        if (
+            not self._refused_issue_raised
+            and self._refused_count >= REFUSED_ISSUE_FAILURES
+            and now - self._refused_since >= REFUSED_ISSUE_MIN_SPAN
+        ):
+            self._refused_issue_raised = True
+            ir.async_create_issue(
+                self._hass,
+                DOMAIN,
+                api_access_issue_id(self._entry.entry_id),
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="api_access_refused",
+                learn_more_url=REFUSED_ISSUE_LEARN_MORE,
+            )
 
     async def _open(
         self,
@@ -282,7 +412,10 @@ class MistralClient:
                 raise
         except HomeAssistantError as err:
             self.record(source, err, status)
+            if getattr(err, "translation_key", None) == "rate_limited":
+                self._note_rate_limited()
             raise
+        self._note_success()
         async with stack:
             yield resp
 
@@ -393,22 +526,77 @@ class MistralClient:
 
     @staticmethod
     async def validate_key(
-        session: aiohttp.ClientSession, api_key: str, region: str | None = None
+        session: aiohttp.ClientSession,
+        api_key: str,
+        region: str | None = None,
+        *,
+        probe_chat: bool = True,
     ) -> tuple[str | None, str]:
         """Check an API key on *region*'s host before an entry (or its client) exists.
 
         Returns ``(None, "")`` when valid, else ``("invalid_auth" |
-        "cannot_connect", detail)``; the detail never contains the key.
+        "no_api_access" | "cannot_connect", detail)``; the detail never
+        contains the key.
+
+        ``GET /v1/models`` accepts a key whose account has no API access (the
+        Free plan since November 2026, or no credits). So when it succeeds,
+        one minimal chat completion (``max_tokens`` 1) is sent as well, to the
+        same host: a 429 there means ``no_api_access``. It costs a fraction of
+        a cent, once per setup, reauth or reconfigure, and is skipped when the
+        account lists neither the default model nor ``ministral-3b-latest``.
+        Pass ``probe_chat=False`` to skip it (the check at every Home
+        Assistant start does, so a restart costs nothing).
         """
+        # Imported here: _models imports this module.
+        from ._models import model_available
+
+        base = api_base(region)
+        auth = {"Authorization": f"Bearer {api_key}"}
         try:
             async with session.get(
-                f"{api_base(region)}/models",
-                headers={"Authorization": f"Bearer {api_key}"},
+                f"{base}/models",
+                headers=auth,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status == 401:
                     return "invalid_auth", "HTTP 401"
                 if resp.status != 200:
+                    return "cannot_connect", f"HTTP {resp.status}"
+                if not probe_chat:
+                    return None, ""
+                try:
+                    listing = await resp.json(content_type=None)
+                except (ValueError, aiohttp.ClientError, TimeoutError):
+                    listing = None
+            models = listing.get("data") if isinstance(listing, dict) else None
+            if not isinstance(models, list):
+                return None, ""
+            models = [m for m in models if isinstance(m, dict)]
+            model = next(
+                (
+                    m
+                    for m in (DEFAULT_MODEL, _PROBE_FALLBACK_MODEL)
+                    if model_available(m, models)
+                ),
+                None,
+            )
+            if model is None:
+                return None, ""
+            async with session.post(
+                f"{base}/chat/completions",
+                headers={**auth, "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "hi"}],
+                },
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status == 401:
+                    return "invalid_auth", "HTTP 401"
+                if resp.status == 429:
+                    return "no_api_access", "HTTP 429"
+                if not 200 <= resp.status < 300:
                     return "cannot_connect", f"HTTP {resp.status}"
         except (aiohttp.ClientError, TimeoutError) as err:
             # Never repr() an aiohttp error: it would include the API key header.

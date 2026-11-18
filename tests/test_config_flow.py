@@ -94,6 +94,7 @@ async def test_reauth_updates_key(
     setup_integration: MockConfigEntry,
     aioclient_mock: AiohttpClientMocker,
 ) -> None:
+    aioclient_mock.post(f"{BASE}/chat/completions", json={})
     entry = setup_integration
     result = await entry.start_reauth_flow(hass)
     assert result["step_id"] == "reauth_confirm"
@@ -155,8 +156,11 @@ async def _start_reconfigure(hass: HomeAssistant, entry: MockConfigEntry):
 
 
 async def test_reconfigure_changes_key(
-    hass: HomeAssistant, setup_integration: MockConfigEntry
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
 ) -> None:
+    aioclient_mock.post(f"{BASE}/chat/completions", json={})
     entry = setup_integration
     result = await _start_reconfigure(hass, entry)
     assert result["type"] is FlowResultType.FORM
@@ -323,6 +327,7 @@ async def test_reconfigure_reloads_once(
 ) -> None:
     """One reload: a second one would repeat the key check, which a free-tier
     key can fail with a rate limit right after a successful reconfigure."""
+    aioclient_mock.post(f"{BASE}/chat/completions", json={})
     entry = setup_integration
     aioclient_mock.mock_calls.clear()
     result = await _start_reconfigure(hass, entry)
@@ -401,6 +406,7 @@ GLOBAL_HOST = BASE.removesuffix("/v1") + "/"
 
 def _mock_eu(aioclient_mock: AiohttpClientMocker) -> None:
     aioclient_mock.get(f"{EU}/models", text=load_fixture("models.json"))
+    aioclient_mock.post(f"{EU}/chat/completions", json={})
     aioclient_mock.get(
         "https://api.eu.mistral.ai/v2/audio/voices", text=load_fixture("voices.json")
     )
@@ -567,3 +573,85 @@ async def test_regional_endpoint_hides_web_search_in_the_options(
     )
     await hass.async_block_till_done()
     assert result["data"]["web_search"] is False
+
+
+# ---------------------------------------------------------------------------
+# No API access: /models accepts the key, a test request gets a 429
+# ---------------------------------------------------------------------------
+
+NO_API_ACCESS_BODY = {
+    "object": "error",
+    "message": "Rate limit exceeded",
+    "type": "rate_limited",
+    "param": None,
+    "code": "1300",
+    "raw_status_code": 429,
+}
+
+
+def _mock_no_api_access(aioclient_mock: AiohttpClientMocker, base: str = BASE) -> None:
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{base}/models", text=load_fixture("models.json"))
+    aioclient_mock.post(
+        f"{base}/chat/completions", status=429, json=NO_API_ACCESS_BODY
+    )
+
+
+async def test_user_step_shows_no_api_access(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    _mock_no_api_access(aioclient_mock)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-no-access"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "no_api_access"}
+
+
+async def test_reauth_shows_no_api_access(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    entry = setup_integration
+    _mock_no_api_access(aioclient_mock)
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-no-access"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "no_api_access"}
+    assert entry.data["api_key"] == API_KEY
+
+
+async def test_reconfigure_shows_no_api_access(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    entry = setup_integration
+    _mock_no_api_access(aioclient_mock)
+    result = await _start_reconfigure(hass, entry)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-no-access"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "no_api_access"}
+    assert entry.data["api_key"] == API_KEY
+
+
+async def test_no_api_access_is_checked_on_the_chosen_region(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    _mock_no_api_access(aioclient_mock, EU)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_key": "sk-no-access", "api_region": "eu"}
+    )
+    assert result["errors"] == {"base": "no_api_access"}
+    assert _urls(aioclient_mock) == [f"{EU}/models", f"{EU}/chat/completions"]
