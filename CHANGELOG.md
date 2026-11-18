@@ -6,6 +6,7 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Docs:** the README now opens with a notice that Mistral's Free plan has no API access since November 2026. On that plan every request fails with HTTP 429 (code 1300), which the integration reports as *"temporarily overloaded"*. A new section, *Mistral account and billing*, gives the steps: credits, pay-as-you-go, a key test, and *Reconfigure*. It also explains why the Limits page and the Studio playground look fine anyway.
 
 ---
 

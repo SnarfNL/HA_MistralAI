@@ -14,6 +14,16 @@
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 </div>
 
+> [!IMPORTANT]
+> **Mistral's Free plan no longer includes API access (since November 2026).**
+> On a Free plan, requests from this integration fail even though everything looks fine in Mistral's console.
+> Typical signs:
+> - The Home Assistant log shows *"Mistral is temporarily overloaded"* or *"TTS sentence 0 failed"*.
+> - Mistral answers `429 Rate limit exceeded` (code `1300`), even for a single request.
+> - The **Limits** page shows normal limits, and the **Studio playground** works. The playground uses your login, not your API key.
+>
+> **To fix this:** buy credits, turn on pay-as-you-go, and then check your key. See [Mistral account and billing](#mistral-account-and-billing) for the steps.
+
 ---
 
 ## Table of Contents
@@ -24,6 +34,7 @@
 4. [Installation](#installation)
 5. [Configuration](#configuration)
    - [Creating an API key](#creating-an-api-key)
+   - [Mistral account and billing](#mistral-account-and-billing)
    - [Setting up the integration](#setting-up-the-integration)
    - [Selecting as voice assistant](#selecting-as-voice-assistant)
 6. [Options](#options)
@@ -75,7 +86,7 @@ This integration makes **Mistral AI** available as a fully-featured conversation
 |---|---|
 | Home Assistant Core | 2025.10 |
 | Python | 3.13 |
-| Mistral AI account + API key | — |
+| Mistral AI account with pay-as-you-go and credits + API key | — (see [Mistral account and billing](#mistral-account-and-billing)) |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -108,8 +119,58 @@ This integration makes **Mistral AI** available as a fully-featured conversation
 ### Creating an API key
 
 1. Sign up at [mistral.ai](https://mistral.ai/)
-2. Go to [console.mistral.ai/api-keys](https://console.mistral.ai/api-keys)
-3. Click **Create new key** and copy it immediately
+2. Set up billing first, as described in [Mistral account and billing](#mistral-account-and-billing). A key on the Free plan cannot call the API.
+3. Go to [console.mistral.ai/api-keys](https://console.mistral.ai/api-keys)
+4. Click **Create new key** and copy it immediately. Never paste it in an issue, a chat or a log.
+
+### Mistral account and billing
+
+Since November 2026, Mistral's Free plan covers only Vibe and the Studio playground. It no longer includes API access.
+To use the API, your organization needs **pay-as-you-go turned on and a positive credit balance**. A payment method alone is not enough.
+See Mistral's [plans and limits](https://docs.mistral.ai/admin/user-management-finops/tier) and [subscriptions](https://docs.mistral.ai/admin/user-management-finops/subscriptions).
+
+**How it shows up.** These signs mean API access is not active:
+
+| Where | What you see |
+|---|---|
+| Home Assistant log | `TTS sentence 0 failed: Mistral is temporarily overloaded`, `Mistral TTS returned no audio for any sentence`, or a conversation that answers *"Mistral is temporarily overloaded"* |
+| Mistral API response | `{"message":"Rate limit exceeded","type":"rate_limited","code":"1300","raw_status_code":429}`, on every request, including a single one |
+| Admin Console → **Limits** | Normal limits (for example 1 request/s and 3,600 audio seconds/min). This page does **not** show that API access is off. |
+| Studio playground | Works, because it uses your login and not your API key |
+
+The integration accepts such a key during setup, because Mistral's model list (`GET /v1/models`) still answers for it.
+
+**Steps to turn API access on:**
+
+1. In the [Admin Console](https://admin.mistral.ai/), open **Billing → Credits → Add credits** and buy a small amount. Pay-as-you-go is prepaid, so credits must be there before you can turn it on.
+2. Open **Subscription** and turn **pay-as-you-go** on. It is off by default.
+3. Under **Billing**, set a **monthly spending limit**.
+4. Wait a few minutes.
+5. Test the key outside Home Assistant (see the commands below). If it still returns 429, create a new key and test again.
+6. In Home Assistant, open **Settings → Devices & Services → Mistral AI Conversation → ⋮ → Reconfigure**, and enter the key there.
+
+Costs for voice use are low. Voxtral TTS 3 costs $13 per million characters, so a spoken reply of 100 characters costs about $0.0013.
+
+**Test the key.** Replace `YOUR_API_KEY` and `YOUR_VOICE_ID`, for example `en_paul_neutral`.
+
+PowerShell (paste as one block):
+
+```powershell
+$key = "YOUR_API_KEY"; $voice = "YOUR_VOICE_ID"
+$body = @{ model = "voxtral-mini-tts-3-0"; input = "Hello"; voice_id = $voice; response_format = "mp3" } | ConvertTo-Json
+try { $r = Invoke-WebRequest -UseBasicParsing -Uri "https://api.mistral.ai/v1/audio/speech" -Method Post -Headers @{ Authorization = "Bearer $key" } -ContentType "application/json" -Body $body; Write-Host "OK ($($r.RawContentLength) bytes)" -ForegroundColor Green } catch { Write-Host "HTTP $([int]$_.Exception.Response.StatusCode)" -ForegroundColor Red; Write-Host $_.ErrorDetails.Message }
+```
+
+Linux / macOS:
+
+```bash
+curl -s -o /dev/null -w "HTTP %{http_code}\n" https://api.mistral.ai/v1/audio/speech \
+  -H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" \
+  -d '{"model":"voxtral-mini-tts-3-0","input":"Hello","voice_id":"YOUR_VOICE_ID","response_format":"mp3"}'
+```
+
+`HTTP 200` / `OK` means the key works. A `429` with code `1300` means API access is still off.
+If you use a regional endpoint, replace `api.mistral.ai` with `api.eu.mistral.ai` or `api.us.mistral.ai`.
 
 ### Setting up the integration
 
@@ -166,7 +227,7 @@ Verified against Mistral's model lineup, September 2026. All entries use Mistral
 
 > **Recommendation:** Start with `ministral-8b-latest`. It has excellent instruction-following, handles structured JSON output reliably (needed for device control), and costs a fraction of larger models.
 >
-> **About the "Free tier" column:** Mistral's free/Experiment API tier gives rate-limited trial access to all models — Mistral doesn't publish an official per-model block list. In practice, though, Medium and Large are the ones most likely to hit those limits or get rejected on a free-tier key, since they're the most expensive per token. If you're on a free key and see errors on Medium or Large, that's most likely why — check your usage tier at [admin.mistral.ai](https://admin.mistral.ai/plateforme/limits).
+> **About the "Free tier" column:** this column dates from Mistral's old free Experiment API tier. Since November 2026, the Free plan has no API access at all, so every model needs pay-as-you-go with credits. See [Mistral account and billing](#mistral-account-and-billing).
 >
 > **Removed:** `open-mistral-nemo` (Mistral Nemo 12B) has been deprecated and retired by Mistral and no longer works — switch to `ministral-8b-latest` or `ministral-3b-latest` if your config still uses it.
 
@@ -393,6 +454,11 @@ After updating and restarting Home Assistant:
 ---
 
 ## FAQ
+
+**Q: Every request fails with "Mistral is temporarily overloaded" or HTTP 429, even a single one.**
+A: Your Mistral organization most likely has no API access. This is the case on the Free plan since November 2026.
+Buy credits, turn on pay-as-you-go, and test the key; see [Mistral account and billing](#mistral-account-and-billing).
+A playground that works in Studio and normal values on the Limits page do not prove that your API key works.
 
 **Q: STT or TTS fails after upgrading to Voxtral 3.**
 A: Check the Home Assistant log for the HTTP status and the request URL (for
