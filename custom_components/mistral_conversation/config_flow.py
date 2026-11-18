@@ -12,7 +12,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import MistralClient
 from .const import (
+    API_REGIONS,
     CHAT_MODELS,
+    CONF_API_REGION,
     CONF_MAX_TOKENS,
     CONF_MODEL,
     CONF_PROMPT,
@@ -21,6 +23,7 @@ from .const import (
     CONF_WEB_SEARCH,
     CONF_WEB_SEARCH_MODE,
     CONF_WEB_SEARCH_TRIGGER,
+    DEFAULT_API_REGION,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_PROMPT,
@@ -46,6 +49,30 @@ API_KEY_SCHEMA = vol.Schema(
 )
 
 
+def _key_and_region_schema(region: str) -> vol.Schema:
+    """API key plus the inference region (first step and Reconfigure).
+
+    The region is a suggested value, not a default: a submit without it
+    (an older client, a test) stores nothing and means global.
+    """
+    return vol.Schema(
+        {
+            vol.Required(CONF_API_KEY): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+            ),
+            vol.Optional(
+                CONF_API_REGION, description={"suggested_value": region}
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=API_REGIONS,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    translation_key="api_region",
+                )
+            ),
+        }
+    )
+
+
 class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the initial setup config flow."""
 
@@ -56,21 +83,25 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         errors: dict[str, str] = {}
 
+        region = DEFAULT_API_REGION
         if user_input is not None:
-            error = await self._test_api_key(user_input[CONF_API_KEY])
+            region = user_input.get(CONF_API_REGION, DEFAULT_API_REGION)
+            error = await self._test_api_key(user_input[CONF_API_KEY], region)
             if error:
                 errors["base"] = error
             else:
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_configured()
+                data = {CONF_API_KEY: user_input[CONF_API_KEY]}
+                if CONF_API_REGION in user_input:
+                    data[CONF_API_REGION] = region
                 return self.async_create_entry(
-                    title="Mistral AI Conversation",
-                    data={CONF_API_KEY: user_input[CONF_API_KEY]},
+                    title="Mistral AI Conversation", data=data
                 )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=API_KEY_SCHEMA,
+            data_schema=_key_and_region_schema(region),
             errors=errors,
             description_placeholders={
                 "api_key_url": "https://console.mistral.ai/api-keys"
@@ -90,7 +121,11 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            error = await self._test_api_key(user_input[CONF_API_KEY])
+            # The key is checked on the host of the entry's own region.
+            error = await self._test_api_key(
+                user_input[CONF_API_KEY],
+                self._get_reauth_entry().data.get(CONF_API_REGION),
+            )
             if error:
                 errors["base"] = error
             else:
@@ -108,16 +143,20 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Change the API key without removing the integration."""
+        """Change the API key or the region without removing the integration."""
         errors: dict[str, str] = {}
+        entry = self._get_reconfigure_entry()
+        region = entry.data.get(CONF_API_REGION, DEFAULT_API_REGION)
 
         if user_input is not None:
-            error = await self._test_api_key(user_input[CONF_API_KEY])
+            region = user_input.get(CONF_API_REGION, region)
+            error = await self._test_api_key(user_input[CONF_API_KEY], region)
             if error:
                 errors["base"] = error
             else:
-                entry = self._get_reconfigure_entry()
                 data_updates = {CONF_API_KEY: user_input[CONF_API_KEY]}
+                if CONF_API_REGION in user_input:
+                    data_updates[CONF_API_REGION] = region
                 if entry.state is not config_entries.ConfigEntryState.LOADED:
                     return self.async_update_reload_and_abort(
                         entry, data_updates=data_updates
@@ -131,13 +170,17 @@ class MistralConversationConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="reconfigure_successful")
 
         return self.async_show_form(
-            step_id="reconfigure", data_schema=API_KEY_SCHEMA, errors=errors
+            step_id="reconfigure",
+            data_schema=_key_and_region_schema(region),
+            errors=errors,
         )
 
-    async def _test_api_key(self, api_key: str) -> str | None:
+    async def _test_api_key(
+        self, api_key: str, region: str | None = None
+    ) -> str | None:
         try:
             error, _detail = await MistralClient.validate_key(
-                async_get_clientsession(self.hass), api_key
+                async_get_clientsession(self.hass), api_key, region
             )
         except Exception:  # pylint: disable=broad-except
             _LOGGER.exception("Unexpected error testing API key")
@@ -194,7 +237,8 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.ConfigFlowResult:
         """Step 2: everything else; web search only for a supporting model."""
         opts = self.config_entry.options
-        capable = supports_web_search(self._model)
+        region = self.config_entry.data.get(CONF_API_REGION)
+        capable = supports_web_search(self._model, region)
 
         if user_input is not None:
             # Clean up empty LLM API selection
@@ -269,7 +313,7 @@ class MistralOptionsFlow(config_entries.OptionsFlow):
             previous = opts.get(CONF_MODEL, DEFAULT_MODEL)
             web_default = (
                 opts.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH)
-                if supports_web_search(previous)
+                if supports_web_search(previous, region)
                 else True
             )
             schema.update(

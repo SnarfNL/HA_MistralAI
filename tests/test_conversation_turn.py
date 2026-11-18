@@ -186,6 +186,48 @@ class ConversationsParsingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.translation_key, "invalid_response")
 
 
+class RegionalWebSearchTests(unittest.IsolatedAsyncioTestCase):
+    """Web search is unavailable on a regional endpoint (#84)."""
+
+    async def _run(self, options: dict, region: str, text: str = "weather"):
+        entity = _entity(options)
+        entity._runtime.client.region = region
+        search = AsyncMock(return_value="Sunny.")
+        stream = AsyncMock()
+        with (
+            patch.object(entity, "_conversations_chat", search),
+            patch.object(entity, "_stream_and_collect", stream),
+            patch.object(conv_module.conversation, "async_get_result_from_chat_log", MagicMock()),
+        ):
+            await entity._async_converse(_user_input(text), _ChatLog())
+        return search, stream
+
+    async def test_global_still_searches_directly_in_always_mode(self) -> None:
+        search, stream = await self._run(WEB_SEARCH_ALWAYS, "global")
+        search.assert_awaited_once()
+        stream.assert_not_awaited()
+
+    async def test_regional_endpoint_never_searches_in_always_mode(self) -> None:
+        for region in ("eu", "us"):
+            with self.subTest(region=region):
+                search, stream = await self._run(WEB_SEARCH_ALWAYS, region)
+                search.assert_not_awaited()
+                stream.assert_awaited_once()
+
+    async def test_regional_endpoint_ignores_trigger_phrases(self) -> None:
+        options = {**WEB_SEARCH_ALWAYS, CONF_WEB_SEARCH_TRIGGER: "search"}
+        search, stream = await self._run(options, "eu", "search the weather")
+        search.assert_not_awaited()
+        stream.assert_awaited_once()
+
+    async def test_the_search_tool_is_offered_only_on_global(self) -> None:
+        _, stream = await self._run(WEB_SEARCH_BY_MODEL, "global")
+        tools = stream.await_args.args[0]["tools"]
+        self.assertEqual([t["function"]["name"] for t in tools], ["web_search"])
+        _, stream = await self._run(WEB_SEARCH_BY_MODEL, "eu")
+        self.assertNotIn("tools", stream.await_args.args[0])
+
+
 class SpokenErrorTests(unittest.IsolatedAsyncioTestCase):
     async def _spoken_turn(self, error: BaseException, chat_log: _ChatLog):
         entity = _entity({})

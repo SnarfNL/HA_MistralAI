@@ -456,3 +456,49 @@ async def test_validate_key_results(hass, aioclient_mock) -> None:
     aioclient_mock.clear_requests()
     aioclient_mock.get("https://api.mistral.ai/v1/models", exc=TimeoutError())
     assert (await MistralClient.validate_key(session, "k"))[0] == "cannot_connect"
+
+
+# ---------------------------------------------------------------------------
+# Regional inference (#84): the host follows the region
+# ---------------------------------------------------------------------------
+
+
+async def test_client_requests_go_to_the_regions_host() -> None:
+    for region, expected, base in (
+        (None, "global", "https://api.mistral.ai/v1"),
+        ("global", "global", "https://api.mistral.ai/v1"),
+        ("eu", "eu", "https://api.eu.mistral.ai/v1"),
+        ("us", "us", "https://api.us.mistral.ai/v1"),
+        ("mars", "global", "https://api.mistral.ai/v1"),
+    ):
+        session = _Session(_Response(200))
+        entry = SimpleNamespace(entry_id="entry1", async_start_reauth=MagicMock())
+        client = MistralClient(
+            SimpleNamespace(), entry, session, API_KEY, deque(maxlen=10), region
+        )
+        async with client.request("get", "/models", timeout=5, source="models"):
+            pass
+        assert client.region == expected
+        assert session.urls == [f"{base}/models"], region
+
+
+async def test_client_without_a_region_is_global() -> None:
+    client, _, session = _setup(_Response(200))
+    async with client.request("get", "/models", timeout=5, source="models"):
+        pass
+    assert client.region == "global"
+    assert session.urls == ["https://api.mistral.ai/v1/models"]
+
+
+async def test_validate_key_uses_the_selected_region(hass, aioclient_mock) -> None:
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    session = async_get_clientsession(hass)
+    aioclient_mock.get("https://api.eu.mistral.ai/v1/models", json={"data": []})
+    assert await MistralClient.validate_key(session, "k", "eu") == (None, "")
+    assert [str(call[1]) for call in aioclient_mock.mock_calls] == [
+        "https://api.eu.mistral.ai/v1/models"
+    ]
+    aioclient_mock.clear_requests()
+    aioclient_mock.get("https://api.us.mistral.ai/v1/models", status=401)
+    assert (await MistralClient.validate_key(session, "k", "us"))[0] == "invalid_auth"
