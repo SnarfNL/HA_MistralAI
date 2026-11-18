@@ -87,7 +87,9 @@ async def _setup_with_options(hass, entry, aioclient_mock, **options) -> None:
     hass.config_entries.async_update_entry(entry, options=options)
     assert await async_setup_component(hass, "homeassistant", {})
     aioclient_mock.get(f"{BASE}/models", text=load_fixture("models.json"))
-    aioclient_mock.get(f"{BASE}/audio/voices", text=load_fixture("voices.json"))
+    aioclient_mock.get(
+        "https://api.mistral.ai/v2/audio/voices", text=load_fixture("voices.json")
+    )
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
@@ -149,10 +151,18 @@ EU = "https://api.eu.mistral.ai/v1"
 WEB_SEARCH_OPTIONS = {"model": "mistral-small-latest", "web_search": True}
 
 
+def _on_host_of(url: str, base: str) -> bool:
+    """True for a v1 call under *base* or the v2 voice list on the same host."""
+    host = base.removesuffix("/v1")
+    return url.startswith((f"{base}/", f"{host}/v2/audio/voices"))
+
+
 async def _setup_with(hass: HomeAssistant, aioclient_mock, base: str, data: dict):
     assert await async_setup_component(hass, "homeassistant", {})
     aioclient_mock.get(f"{base}/models", text=load_fixture("models.json"))
-    aioclient_mock.get(f"{base}/audio/voices", text=load_fixture("voices.json"))
+    aioclient_mock.get(
+        f"{base.removesuffix('/v1')}/v2/audio/voices", text=load_fixture("voices.json")
+    )
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Mistral AI Conversation",
@@ -174,7 +184,7 @@ async def test_entry_without_a_region_is_global(
     assert entry.runtime_data.client.region == "global"
     assert entry.options["web_search"] is True
     assert aioclient_mock.mock_calls
-    assert all(str(call[1]).startswith(BASE) for call in aioclient_mock.mock_calls)
+    assert all(_on_host_of(str(call[1]), BASE) for call in aioclient_mock.mock_calls)
 
 
 async def test_regional_entry_talks_to_its_host_only(
@@ -186,7 +196,7 @@ async def test_regional_entry_talks_to_its_host_only(
     assert entry.state is ConfigEntryState.LOADED
     assert entry.runtime_data.client.region == "eu"
     assert aioclient_mock.mock_calls
-    assert all(str(call[1]).startswith(EU) for call in aioclient_mock.mock_calls)
+    assert all(_on_host_of(str(call[1]), EU) for call in aioclient_mock.mock_calls)
 
 
 async def test_web_search_is_switched_off_on_a_regional_endpoint(

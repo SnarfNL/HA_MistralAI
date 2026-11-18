@@ -113,9 +113,9 @@ class LanguageOptionsTests(unittest.TestCase):
 
 
 class DocumentedLanguagesTests(unittest.TestCase):
-    """The picker offers exactly the 13 languages Voxtral documents."""
+    """The existing language choices remain available after the upgrade."""
 
-    def test_exactly_the_thirteen_documented_languages(self) -> None:
+    def test_existing_language_choices_are_preserved(self) -> None:
         self.assertSetEqual(
             {c for c, _ in LANGUAGE_OPTIONS},
             {"ar", "de", "en", "es", "fr", "hi", "it", "ja", "ko", "nl", "pt", "ru", "zh"},

@@ -160,6 +160,10 @@ class MistralClient:
         self._json_headers = {**self._auth, "Content-Type": "application/json"}
         self.errors = errors
 
+    def _api_url(self, path: str, version: str) -> str:
+        """Use the same (regional) host for every API version."""
+        return f"{self._base.removesuffix('/v1')}/{version}{path}"
+
     def record(
         self, source: str, err: BaseException, status: int | None = None
     ) -> None:
@@ -228,6 +232,7 @@ class MistralClient:
         *,
         timeout: float,
         source: str,
+        api_version: str = "v1",
         multipart: bool = False,
         data_factory: Callable[[], Any] | None = None,
         log_context: str = "",
@@ -242,8 +247,9 @@ class MistralClient:
         that can only be sent once (``aiohttp.FormData``). *log_context*
         (e.g. the model or voice) is added to the log line of an error
         status; *log_level* is the level of that line and of network failures.
+        *api_version* changes only the version path, keeping the same host.
         """
-        url = f"{self._base}{path}"
+        url = self._api_url(path, api_version)
         headers = self._auth if multipart else self._json_headers
         status: int | None = None
         try:
@@ -345,12 +351,18 @@ class MistralClient:
             data_factory=data_factory,
         )
 
-    async def list_voices(self, offset: int, limit: int) -> dict[str, Any]:
-        """One page of the account's voices."""
+    async def list_voices(
+        self, page_token: str | None, page_size: int
+    ) -> dict[str, Any]:
+        """One cursor-paginated page of preset and custom voices (v2 API)."""
+        params: dict[str, str | int] = {"page_size": page_size, "type": "all"}
+        if page_token is not None:
+            params["page_token"] = page_token
         async with self.request(
             "get",
             "/audio/voices",
-            params={"limit": limit, "offset": offset},
+            api_version="v2",
+            params=params,
             timeout=10,
             source="tts",
             # A failed fetch is not fatal: the last good list stays.
