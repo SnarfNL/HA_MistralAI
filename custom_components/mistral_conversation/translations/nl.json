@@ -35,6 +35,7 @@
     "error": {
       "cannot_connect": "Kan geen verbinding maken. Controleer je internetverbinding.",
       "invalid_auth": "Ongeldige API-sleutel. Controleer de sleutel op console.mistral.ai.",
+      "no_api_access": "Mistral weigerde een testverzoek (HTTP 429). Je Mistral-account heeft waarschijnlijk geen API-toegang: zet pay-as-you-go aan en voeg tegoed toe in de Mistral-console en probeer het daarna opnieuw.",
       "unknown": "Onbekende fout. Zie de logbestanden voor details."
     },
     "abort": {
@@ -128,7 +129,7 @@
       "message": "De Mistral API-sleutel is ongeldig. Voer hem opnieuw in in Home Assistant."
     },
     "rate_limited": {
-      "message": "Mistral is tijdelijk overbelast. Probeer het zo nog eens."
+      "message": "Mistral weigerde het verzoek vanwege een limiet. Blijft dit gebeuren, controleer dan je Mistral-abonnement."
     },
     "cannot_connect": {
       "message": "Mistral is nu niet bereikbaar."
@@ -156,6 +157,10 @@
     }
   },
   "issues": {
+    "api_access_refused": {
+      "title": "Mistral blijft verzoeken weigeren",
+      "description": "Elk verzoek aan Mistral mislukt al een paar minuten met een limietfout (HTTP 429). Sinds november 2026 heeft het gratis abonnement van Mistral geen API-toegang: zet pay-as-you-go aan en voeg tegoed toe in de Mistral-console en test daarna je sleutel. Een echte overbelasting gaat vanzelf over; deze melding verdwijnt na het volgende geslaagde verzoek."
+    },
     "model_retired": {
       "title": "Mistral-model {model} is niet meer beschikbaar",
       "fix_flow": {

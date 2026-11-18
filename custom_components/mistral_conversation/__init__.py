@@ -12,6 +12,7 @@ from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
 
@@ -21,7 +22,7 @@ from ._models import (
     async_clear_stale_issue,
 )
 from ._web_search import WebSearchConversations
-from .api import MistralClient
+from .api import MistralClient, api_access_issue_id
 from .const import (
     CONF_API_REGION,
     CONF_MODEL,
@@ -70,7 +71,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> b
     region = entry.data.get(CONF_API_REGION, DEFAULT_API_REGION)
     session = async_get_clientsession(hass)
 
-    error, detail = await MistralClient.validate_key(session, api_key, region)
+    # No test request here: it would cost a little on every HA start. The
+    # config flow runs it; a missing API access shows up in the log, in the
+    # spoken error and in the repair issue.
+    error, detail = await MistralClient.validate_key(
+        session, api_key, region, probe_chat=False
+    )
     if error == "invalid_auth":
         raise ConfigEntryAuthFailed("Invalid Mistral AI API key")
     if error:
@@ -134,7 +140,20 @@ async def async_unload_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> 
     entities can finish their teardown (closing streams, cancelling pipelined
     TTS tasks) with the client still available.
     """
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        # The client (and its count of refused requests) goes away with the
+        # entry, so the repair issue would never be cleared otherwise.
+        ir.async_delete_issue(hass, DOMAIN, api_access_issue_id(entry.entry_id))
+    return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> None:
+    """Clear the "Mistral keeps refusing requests" issue of a removed entry.
+
+    Also covers an entry that was never loaded, where unload does not run.
+    """
+    ir.async_delete_issue(hass, DOMAIN, api_access_issue_id(entry.entry_id))
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: MistralConfigEntry) -> None:

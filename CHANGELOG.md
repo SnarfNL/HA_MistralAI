@@ -7,6 +7,12 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 ### Unreleased
 - **Docs:** the README now opens with a notice that Mistral's Free plan has no API access since November 2026. On that plan every request fails with HTTP 429 (code 1300), which the integration reports as *"temporarily overloaded"*. A new section, *Mistral account and billing*, gives the steps: credits, pay-as-you-go, a key test, and *Reconfigure*. It also explains why the Limits page and the Studio playground look fine anyway.
+- **Fixed:** since November 2026 Mistral's Free plan has no API access: every request fails with HTTP 429 (code 1300), which the integration reported only as "temporarily overloaded" and, for speech, "Check the voice ID". Closes #100.
+- **Changed:** the log now shows what Mistral said about a rate limit: one warning with the HTTP status, Mistral's error code and message, and `Retry-After` when present (never the API key or headers). The last errors in the diagnostics download also show Mistral's short error code (for example `1300`).
+- **Changed:** the spoken and shown rate-limit message now says Mistral refused the request because of a rate limit and to check your Mistral billing if it keeps happening (English, Dutch and French).
+- **Changed:** when text-to-speech produces no audio, the error points at the real cause: API access (pay-as-you-go with credits) after a rate limit, the API key after an authentication error, the voice ID only for a rejected voice, otherwise the Home Assistant log. After a rate limit or an invalid key, the remaining sentences of that reply are no longer sent to Mistral.
+- **Added:** a repair notification, *Mistral keeps refusing requests*, when at least 5 requests in a row (over at least 2 minutes) fail with a rate limit. It disappears after the next successful request, or when the integration is unloaded or removed.
+- **Added:** checking an API key (setup, re-authentication, *Reconfigure*) now also sends one tiny test request (1 token, a fraction of a cent). A key whose account has no API access is refused with a clear message instead of being accepted. Nothing is sent at Home Assistant start.
 
 ---
 

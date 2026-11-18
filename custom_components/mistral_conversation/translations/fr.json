@@ -35,6 +35,7 @@
     "error": {
       "cannot_connect": "Impossible de se connecter. Vérifiez votre connexion internet.",
       "invalid_auth": "Clé d'API invalide. Merci de vérifier sur console.mistral.ai.",
+      "no_api_access": "Mistral a refusé une requête de test (HTTP 429). Votre compte Mistral n'a probablement pas d'accès à l'API : activez le paiement à l'usage (pay-as-you-go) et ajoutez du crédit dans la console Mistral, puis réessayez.",
       "unknown": "Erreur imprévue. Vérifiez les logs de Home Assistant pour plus de détails"
     },
     "abort": {
@@ -128,7 +129,7 @@
       "message": "La clé API Mistral n'est pas valide. Saisissez-la à nouveau dans Home Assistant."
     },
     "rate_limited": {
-      "message": "Mistral est temporairement surchargé. Réessayez dans un instant."
+      "message": "Mistral a refusé la requête à cause d'une limite. Si cela continue, vérifiez votre facturation Mistral."
     },
     "cannot_connect": {
       "message": "Mistral est injoignable pour le moment."
@@ -156,6 +157,10 @@
     }
   },
   "issues": {
+    "api_access_refused": {
+      "title": "Mistral continue de refuser les requêtes",
+      "description": "Chaque requête vers Mistral échoue depuis quelques minutes avec une erreur de limite (HTTP 429). Depuis novembre 2026, l'offre gratuite de Mistral n'inclut plus d'accès à l'API : activez le paiement à l'usage (pay-as-you-go) et ajoutez du crédit dans la console Mistral, puis testez votre clé. Une vraie surcharge passe d'elle-même ; ce message disparaît après la prochaine requête réussie."
+    },
     "model_retired": {
       "title": "Le modèle Mistral {model} n'est plus disponible",
       "fix_flow": {
