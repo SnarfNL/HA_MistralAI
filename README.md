@@ -12,6 +12,7 @@
   [![HA Version](https://img.shields.io/badge/Home%20Assistant-2025.10%2B-blue?style=for-the-badge&logo=home-assistant)](https://www.home-assistant.io/)
   [![Mistral AI](https://img.shields.io/badge/Mistral%20AI-Powered-orange?style=for-the-badge)](https://mistral.ai/)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+  [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/SnarfNL)
 </div>
 
 > [!IMPORTANT]
@@ -48,7 +49,8 @@
 10. [Text-to-speech (TTS)](#text-to-speech-tts)
 11. [FAQ](#faq)
 12. [Release Notes](#release-notes)
-13. [License](#license)
+13. [Support](#support)
+14. [License](#license)
 
 ---
 
@@ -491,6 +493,16 @@ A: Mistral AI processes requests via their servers. See their [privacy policy](h
 ## Release Notes
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+## Support
+
+If this integration is useful to you, you can support its development with a coffee. Thank you!
+
+<a href="https://buymeacoffee.com/SnarfNL" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
