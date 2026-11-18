@@ -365,11 +365,15 @@ async def test_reconfigure_not_loaded_entry_reloads(
 # ---------------------------------------------------------------------------
 
 EU = "https://api.eu.mistral.ai/v1"
+# The whole global host, so a v2 call to it is caught as well as a v1 call.
+GLOBAL_HOST = BASE.removesuffix("/v1") + "/"
 
 
 def _mock_eu(aioclient_mock: AiohttpClientMocker) -> None:
     aioclient_mock.get(f"{EU}/models", text=load_fixture("models.json"))
-    aioclient_mock.get(f"{EU}/audio/voices", text=load_fixture("voices.json"))
+    aioclient_mock.get(
+        "https://api.eu.mistral.ai/v2/audio/voices", text=load_fixture("voices.json")
+    )
 
 
 def _urls(aioclient_mock: AiohttpClientMocker) -> list[str]:
@@ -486,7 +490,7 @@ async def test_reconfigure_changes_the_region_and_reloads_once(
     assert entry.state is config_entries.ConfigEntryState.LOADED
     assert entry.runtime_data.client.region == "eu"
     urls = _urls(aioclient_mock)
-    assert not [u for u in urls if u.startswith(BASE)]  # nothing went to global
+    assert not [u for u in urls if u.startswith(GLOBAL_HOST)]  # nothing went to global
     # New key check + one reload (key check + background model check).
     assert len([u for u in urls if u == f"{EU}/models"]) == 3
 
@@ -504,7 +508,7 @@ async def test_reconfigure_without_a_region_keeps_the_current_one(
     await hass.async_block_till_done()
     assert result["reason"] == "reconfigure_successful"
     assert entry.data["api_region"] == "eu"
-    assert not [u for u in _urls(aioclient_mock) if u.startswith(BASE)]
+    assert not [u for u in _urls(aioclient_mock) if u.startswith(GLOBAL_HOST)]
 
 
 async def test_reauth_checks_the_key_on_the_entrys_region(
@@ -519,7 +523,7 @@ async def test_reauth_checks_the_key_on_the_entrys_region(
     await hass.async_block_till_done()
     assert result["reason"] == "reauth_successful"
     assert entry.data == {"api_key": "sk-new", "api_region": "eu"}
-    assert not [u for u in _urls(aioclient_mock) if u.startswith(BASE)]
+    assert not [u for u in _urls(aioclient_mock) if u.startswith(GLOBAL_HOST)]
 
 
 async def test_regional_endpoint_hides_web_search_in_the_options(
