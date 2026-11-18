@@ -265,6 +265,53 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
             [{"role": "assistant"}, {"content": "Hello"}, {"content": " world"}],
         )
 
+    async def test_reasoning_chunks_are_dropped_and_only_the_answer_is_kept(
+        self,
+    ) -> None:
+        """A reasoning model streams ``delta.content`` as a list of chunks (#93):
+        the thinking is never spoken, the answer text is."""
+
+        def think(text: str) -> dict[str, Any]:
+            return {
+                "type": "thinking",
+                "thinking": [{"type": "text", "text": text}],
+                "closed": True,
+            }
+
+        chunks = [
+            # While thinking: a list with one thinking chunk.
+            _data_frame(_content_delta([think("Der Benutzer fragt")])),
+            _data_frame(_content_delta([think(" nach dem Wetter.")])),
+            # The transition: a closing thinking chunk and the first answer text.
+            _data_frame(
+                _content_delta([think("."), {"type": "text", "text": "Heute "}])
+            ),
+            # Afterwards: a plain string again.
+            _data_frame(_content_delta("ist es sonnig.")),
+            b"data: [DONE]\n\n",
+        ]
+        out = await self._collect(_FakeResponse(chunks))
+        self.assertEqual(
+            out,
+            [
+                {"role": "assistant"},
+                {"content": "Heute "},
+                {"content": "ist es sonnig."},
+            ],
+        )
+
+    async def test_content_that_is_not_text_is_ignored(self) -> None:
+        chunks = [
+            _data_frame(_content_delta([{"type": "image_url", "image_url": "x"}])),
+            _data_frame(_content_delta([{"type": "text", "text": 5}, "oops", None])),
+            _data_frame(_content_delta(None)),
+            _data_frame(_content_delta([])),
+            _data_frame(_content_delta("ok")),
+            b"data: [DONE]\n\n",
+        ]
+        out = await self._collect(_FakeResponse(chunks))
+        self.assertEqual(out, [{"role": "assistant"}, {"content": "ok"}])
+
     async def test_done_terminates(self) -> None:
         chunks = [
             _data_frame(_content_delta("X")),
