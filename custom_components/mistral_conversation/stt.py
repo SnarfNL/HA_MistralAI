@@ -20,7 +20,7 @@ from homeassistant.components.stt import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MistralConfigEntry
 from .api import describe_error, read_json
@@ -57,7 +57,7 @@ LANGUAGE_OPTIONS: list[tuple[str, str]] = [
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MistralConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Voxtral STT entity."""
     async_add_entities([MistralSTTEntity(config_entry)])

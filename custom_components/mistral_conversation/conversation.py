@@ -1,6 +1,7 @@
 """Conversation platform for Mistral AI."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
@@ -18,7 +19,7 @@ from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import intent, llm
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MistralConfigEntry
 from ._web_search import build_conversation_payload
@@ -61,7 +62,7 @@ PARALLEL_UPDATES = 0
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MistralConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Mistral AI conversation entity."""
     async_add_entities([MistralConversationEntity(config_entry)])
@@ -165,9 +166,12 @@ def _format_tool(tool: llm.Tool, custom_serializer: Any = None) -> dict[str, Any
 
 
 def _to_mistral_id(ha_id: str) -> str:
-    """Convert an HA tool_call ID to a Mistral-compatible 9-char alphanumeric ID."""
-    import hashlib
-    return hashlib.md5(ha_id.encode()).hexdigest()[:9]
+    """Convert an HA tool_call ID to a Mistral-compatible 9-char alphanumeric ID.
+
+    The hash only shortens the ID; ``usedforsecurity=False`` keeps it working
+    on FIPS-enabled systems, where a plain ``hashlib.md5()`` raises.
+    """
+    return hashlib.md5(ha_id.encode(), usedforsecurity=False).hexdigest()[:9]
 
 
 def _web_search_tool_def() -> dict[str, Any]:
@@ -231,6 +235,33 @@ def _resolve_trigger(text: str, trigger: str) -> tuple[bool, str]:
 
     matched = max(matches, key=len)
     return True, stripped[len(matched):].lstrip(" :").strip()
+
+
+def _tool_result_to_json(res: conversation.ToolResultContent) -> str:
+    """Serialize a tool result for the ``content`` of a Mistral ``tool`` message.
+
+    HA 2026.10 replaced ``ToolResultContent.tool_result`` (plain JSON) with
+    ``ToolResultContent.result``, an ``llm.ToolResult`` holding ``data`` and an
+    ``error`` flag. The old attribute is a deprecated shim that logs a warning
+    on every access and is removed in HA 2027.11, so it is only read on older
+    HA versions that have no ``result`` (the minimum in hacs.json is 2025.10).
+
+    On 2026.10+ the result is sent as ``{"data": ..., "error": ...}``, the same
+    shape HA core's own chat-completions integrations (Ollama, OpenRouter) use,
+    so the model can tell a failed tool call from a successful one.
+    """
+    result = getattr(res, "result", None)
+    if result is not None and hasattr(result, "data"):
+        return json.dumps(
+            _sanitize(
+                {"data": result.data, "error": bool(getattr(result, "error", False))}
+            )
+        )
+
+    # HA < 2026.10: the result is plain JSON on ``tool_result``. _sanitize
+    # leaves JSON values unchanged and turns anything else into a string
+    # instead of crashing json.dumps.
+    return json.dumps(_sanitize(getattr(res, "tool_result", None)))
 
 
 def _convert_chat_log_to_messages(
@@ -299,11 +330,7 @@ def _convert_chat_log_to_messages(
                             "role": "tool",
                             "tool_call_id": _to_mistral_id(str(res.tool_call_id)),
                             "name": str(res.tool_name),
-                            "content": json.dumps(
-                                _sanitize(res.tool_result)
-                                if isinstance(res.tool_result, (dict, list))
-                                else res.tool_result
-                            ),
+                            "content": _tool_result_to_json(res),
                         })
             else:
                 messages.append({
