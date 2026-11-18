@@ -216,18 +216,16 @@ Click the integration → **Configure** to change settings.
 
 Verified against Mistral's model lineup, September 2026. All entries use Mistral's `-latest` aliases, which track the current model automatically as Mistral ships new versions (e.g. `mistral-large-latest` now serves Mistral Large 3).
 
-| Model | Speed | Cost | Free tier | Best for |
-|---|---|---|---|---|
-| `ministral-8b-latest` ⭐ | ★★★★★ | $ | ✅ | Home automation commands — fast, accurate, cheap |
-| `ministral-3b-latest` | ★★★★★ | $ | ✅ | Ultra-simple commands, lowest latency |
-| `ministral-14b-latest` 🆕 | ★★★★ | $ | ✅ | New (Dec 2025). Strongest of the small edge models |
-| `mistral-small-latest` | ★★★★ | $$ | ✅ | Balanced: quality and speed |
-| `mistral-medium-latest` | ★★★ | $$$ | ⚠️ | Required for web search; heavier, often rate-limited on free API keys |
-| `mistral-large-latest` | ★★★ | $$$$ | ⚠️ | Complex reasoning, long conversations; heavier, often rate-limited on free API keys |
+| Model | Speed | Cost | Best for |
+|---|---|---|---|
+| `ministral-8b-latest` ⭐ | ★★★★★ | $ | Home automation commands — fast, accurate, cheap |
+| `ministral-3b-latest` | ★★★★★ | $ | Ultra-simple commands, lowest latency |
+| `ministral-14b-latest` 🆕 | ★★★★ | $ | New (Dec 2025). Strongest of the small edge models |
+| `mistral-small-latest` | ★★★★ | $$ | Balanced: quality and speed |
+| `mistral-medium-latest` | ★★★ | $$$ | Required for web search; heavier and pricier |
+| `mistral-large-latest` | ★★★ | $$$$ | Complex reasoning, long conversations; heavier and pricier |
 
 > **Recommendation:** Start with `ministral-8b-latest`. It has excellent instruction-following, handles structured JSON output reliably (needed for device control), and costs a fraction of larger models.
->
-> **About the "Free tier" column:** this column dates from Mistral's old free Experiment API tier. Since November 2026, the Free plan has no API access at all, so every model needs pay-as-you-go with credits. See [Mistral account and billing](#mistral-account-and-billing).
 >
 > **Removed:** `open-mistral-nemo` (Mistral Nemo 12B) has been deprecated and retired by Mistral and no longer works — switch to `ministral-8b-latest` or `ministral-3b-latest` if your config still uses it.
 
