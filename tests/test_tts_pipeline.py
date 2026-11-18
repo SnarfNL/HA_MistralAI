@@ -19,6 +19,7 @@ from unittest.mock import patch
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.mistral_conversation import tts as tts_module
+from custom_components.mistral_conversation._streaming import apply_gain
 from custom_components.mistral_conversation.const import (
     TTS_INTER_SENTENCE_SILENCE_BYTES,
     TTS_WAV_HEADER_SIZE,
@@ -197,6 +198,58 @@ class HeaderSplitAcrossChunksTests(unittest.IsolatedAsyncioTestCase):
         while not queue.empty():
             items.append(queue.get_nowait())
         self.assertEqual(items, [("header", HEADER), b"\x01\x02", b"\x03"])
+
+
+class VolumeBoostStreamTests(unittest.IsolatedAsyncioTestCase):
+    """The optional boost scales the PCM after the header, never the header (#89)."""
+
+    SAMPLES = struct.pack("<6h", 0, 100, -100, 1000, -1000, 20000)
+
+    async def _items(self, chunks, options, header=HEADER) -> list:
+        async def fake_iter(resp):
+            for chunk in chunks:
+                yield chunk
+
+        entry = SimpleNamespace(entry_id="entry1", options=options)
+        attach_runtime(entry, SimpleNamespace(request=lambda *a, **k: _FakeResponse()))
+        entity = with_hass(tts_module.MistralTTSEntity(entry), SimpleNamespace(data={}))
+        queue: asyncio.Queue = asyncio.Queue()
+        with patch.object(tts_module, "iter_sse_audio_chunks", fake_iter):
+            await entity._stream_one_sentence_into("Some text here.", "v", queue)
+        return [queue.get_nowait() for _ in range(queue.qsize())]
+
+    async def test_pcm_after_the_header_is_scaled_and_the_header_is_not(self) -> None:
+        items = await self._items([HEADER + self.SAMPLES], {"tts_gain_db": 6})
+        self.assertEqual(items[0], ("header", HEADER))
+        scaled = b"".join(items[1:])
+        self.assertEqual(scaled, apply_gain(self.SAMPLES, 6))
+        self.assertEqual(struct.unpack("<6h", scaled)[1], 200)
+
+    async def test_result_does_not_depend_on_chunk_boundaries(self) -> None:
+        stream = HEADER + self.SAMPLES
+        # Header split mid-way, and PCM samples split in the middle of a sample.
+        chunks = [stream[:20], stream[20:47], stream[47:50], stream[50:]]
+        items = await self._items(chunks, {"tts_gain_db": 6})
+        self.assertEqual(items[0], ("header", HEADER))
+        self.assertEqual(b"".join(items[1:]), apply_gain(self.SAMPLES, 6))
+
+    async def test_zero_gain_passes_audio_through_untouched(self) -> None:
+        chunks = [HEADER[:10], HEADER[10:] + self.SAMPLES[:5], self.SAMPLES[5:]]
+        items = await self._items(chunks, {"tts_gain_db": 0})
+        self.assertEqual(items, [("header", HEADER), self.SAMPLES[:5], self.SAMPLES[5:]])
+
+    async def test_a_trailing_odd_byte_is_passed_on(self) -> None:
+        items = await self._items([HEADER + self.SAMPLES + b""], {"tts_gain_db": 6})
+        self.assertEqual(b"".join(items[1:]), apply_gain(self.SAMPLES, 6) + b"")
+
+    async def test_non_pcm16_header_skips_the_boost_with_one_warning(self) -> None:
+        header_24bit = _wav_header(bits=24)
+        chunks = [header_24bit + self.SAMPLES]
+        with self.assertLogs(tts_module._LOGGER.name, "WARNING") as logs:
+            items = await self._items(chunks, {"tts_gain_db": 6})
+        self.assertEqual(items, [("header", header_24bit), self.SAMPLES])
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("volume boost is not applied", logs.output[0])
 
 
 if __name__ == "__main__":

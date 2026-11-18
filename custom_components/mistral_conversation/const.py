@@ -16,6 +16,8 @@ CONF_TTS_MODE = "tts_mode"
 # Lives in entry.data (next to the API key), not in the options: it decides which
 # host validates the key.
 CONF_API_REGION = "api_region"
+
+CONF_TTS_GAIN_DB = "tts_gain_db"
 # Note: device control uses HA's native CONF_LLM_HASS_API from homeassistant.const
 
 # tts_mode values
@@ -55,6 +57,10 @@ DEFAULT_WEB_SEARCH_MODE = WEB_SEARCH_MODE_MODEL
 DEFAULT_WEB_SEARCH_TRIGGER = ""
 DEFAULT_TTS_VOICE = "en_paul_neutral"
 DEFAULT_TTS_MODE = TTS_MODE_STREAM
+# Volume boost for spoken replies, in dB. Mistral's /v1/audio/speech has no
+# volume parameter, so the integration scales the audio itself. 0 = unchanged.
+DEFAULT_TTS_GAIN_DB = 0
+TTS_GAIN_DB_MAX = 12
 
 DEFAULT_PROMPT = (
     "You are a helpful voice assistant for a smart home called {{ ha_name }}.\n"
