@@ -296,22 +296,25 @@ Als beheerder wil ik bij problemen een diagnostics-bestand kunnen delen en een m
 
 ---
 
-## MA-15 · Web search als external tool call
+## MA-15 · Web search results as tool message (safety fix)
 
-Labels: `backlog` `type:improvement` `priority:should` `release:2-ha-native` `effort:M`
-Status: open
+Labels: `backlog` `type:improvement` `priority:should` `release:2-ha-native` `effort:S`
+Status: open (scope trimmed, see GitHub issue #57)
 
-Als gebruiker wil ik dat zoekresultaten betrouwbaar en veilig in het antwoord terechtkomen, en als beheerder wil ik in de debug-trace zien dat er gezocht is.
+As a user, I want search results to reach the model as tool output, not as something I said, so a web page cannot give instructions to the model.
 
-**Acceptatiecriteria**
+Scope is trimmed to the safety fix. For small models and anything beyond Mistral's own search, the README recommends the community integration llm_intents (https://github.com/skye-harris/llm_intents), which plugs in through HA's "Control Home Assistant" selector. Dropped from the original scope: up to 3 parallel queries, passing the home location, replacing the `always`/trigger modes.
 
-- [ ] Een zoekactie verschijnt in de chat_log als `ToolInput(external=True)` met bijbehorend `ToolResultContent`.
-- [ ] Resultaten gaan als `tool`-bericht naar het model, niet als `user`-bericht.
-- [ ] Meerdere zoekvragen in één beurt worden allemaal uitgevoerd (maximaal 3, parallel).
-- [ ] Optioneel wordt de thuislocatie (stad en land uit HA) meegegeven voor lokale vragen.
-- [ ] De modes `always` en trigger worden vervangen of als deprecated gemarkeerd, met een migratiepad.
+**Acceptance criteria**
 
-**Schatting:** Claude 1,5–2 u + test 45 min · ≈ 2–4 M tokens
+- [ ] Search results are sent to the model as a `tool` message (with the matching tool call), not as a `user` message.
+- [ ] A search action appears in the chat_log as `ToolInput(external=True)` with a matching `ToolResultContent`.
+- [ ] README recommends llm_intents for models that cannot use the built-in web search and says to turn the built-in web search off when using it.
+- [ ] Tests cover the message roles and the chat_log entries.
+
+Not verified yet: that llm_intents works with this integration; check on a live HA before the README recommends it.
+
+**Estimate:** Claude 45 min + test 30 min · ≈ 1–2 M tokens
 
 ---
 
