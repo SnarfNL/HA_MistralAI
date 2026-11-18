@@ -6,7 +6,7 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
-- **Fixed:** a model that shows its reasoning (for example Mistral Large 4) no longer has the reasoning read out or shown in the answer; only the answer is kept. Closes #93.
+- **Fixed:** a model that shows its reasoning (for example Mistral Large 4) no longer has the reasoning read out or shown in the answer; only the answer is kept. The reasoning is kept in the conversation and passed back to Mistral on the next request, as Mistral recommends. Closes #93.
 - **Changed:** speech recognition and both speech generation modes now use Voxtral 3 explicitly. The voice picker uses Mistral's current cursor-paginated `/v2/audio/voices` API, including new presets and existing custom voices; existing voice selections are preserved.
 - **Fixed:** voice labels use preset slugs and language metadata instead of guessing from their names. Voices matching the assistant's language come first, with custom voices before presets within each group; all other voices remain available.
 - **Added:** *Region* choice next to the API key (and in *Reconfigure*): Global (`api.mistral.ai`, the default), EU (`api.eu.mistral.ai`) or US (`api.us.mistral.ai`), for Mistral's regional inference. Regional endpoints cost 1.1× the normal price and only serve models hosted in that region. **Web search is not offered on a regional endpoint** (it is switched off at startup, with one log line) until it has been verified there. Existing installs stay on Global; nothing changes for them. Closes #84.

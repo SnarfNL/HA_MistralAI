@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 import wave
 
 import pytest
@@ -156,6 +157,48 @@ async def test_conversation_tool_call_then_reply(
     second_payload = aioclient_mock.mock_calls[-1][2]
     roles = [m["role"] for m in second_payload["messages"]]
     assert roles[-2:] == ["assistant", "tool"]
+
+
+async def test_conversation_replays_the_reasoning_of_the_previous_turn(
+    hass: HomeAssistant,
+    setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """A thinking model's reasoning is not spoken, but Mistral gets it back (#93)."""
+
+    def frame(delta: dict) -> str:
+        payload = {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
+        return f"data: {json.dumps(payload)}\n\n"
+
+    thinking = {
+        "type": "thinking",
+        "thinking": [{"type": "text", "text": "Ich denke nach"}],
+    }
+    reasoning_reply = (
+        frame({"content": [thinking]})
+        + frame({"content": [{"type": "text", "text": "Heute ist "}]})
+        + frame({"content": "es sonnig."})
+        + "data: [DONE]\n\n"
+    )
+    aioclient_mock.post(
+        f"{BASE}/chat/completions",
+        side_effect=_sequence(reasoning_reply, load_fixture("chat_text.sse")),
+    )
+    first = await conversation.async_converse(
+        hass, "wie ist heute das wetter", None, None, "nl", agent_id=AGENT
+    )
+    assert first.response.speech["plain"]["speech"] == "Heute ist es sonnig."
+    await conversation.async_converse(
+        hass, "und morgen?", first.conversation_id, None, "nl", agent_id=AGENT
+    )
+    messages = aioclient_mock.mock_calls[-1][2]["messages"]
+    assistant = [m["content"] for m in messages if m["role"] == "assistant"]
+    assert assistant == [
+        [
+            {**thinking, "closed": True},
+            {"type": "text", "text": "Heute ist es sonnig."},
+        ]
+    ]
 
 
 async def test_conversation_model_requested_web_search(
