@@ -1,4 +1,18 @@
-{"items": [
-  {"id": "0b6f5c1e-0000-4000-8000-000000000001", "name": "en_paul_neutral"},
-  {"id": "0b6f5c1e-0000-4000-8000-000000000002", "name": "fr_marie_happy"}
-], "total": 2}
+{"data": [
+  {
+    "id": "0b6f5c1e-0000-4000-8000-000000000001",
+    "name": "Paul - Neutral",
+    "type": "preset",
+    "slug": "en_paul_neutral",
+    "languages": ["en_us"],
+    "user_id": null
+  },
+  {
+    "id": "0b6f5c1e-0000-4000-8000-000000000002",
+    "name": "Lotte",
+    "type": "preset",
+    "slug": "voice_3145",
+    "languages": ["nl"],
+    "user_id": null
+  }
+], "next_page_token": null}
