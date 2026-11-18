@@ -45,7 +45,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, MISTRAL_API_BASE
+from .const import DEFAULT_API_REGION, DOMAIN, REGION_BASES, api_base
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -148,13 +148,21 @@ class MistralClient:
         session: aiohttp.ClientSession,
         api_key: str,
         errors: deque[dict[str, Any]],
+        region: str | None = None,
     ) -> None:
         self._hass = hass
         self._entry = entry
         self._session = session
+        # "global", "eu" or "us"; a missing or unknown value means global.
+        self.region = region if region in REGION_BASES else DEFAULT_API_REGION
+        self._base = api_base(self.region)
         self._auth = {"Authorization": f"Bearer {api_key}"}
         self._json_headers = {**self._auth, "Content-Type": "application/json"}
         self.errors = errors
+
+    def _api_url(self, path: str, version: str) -> str:
+        """Use the same (regional) host for every API version."""
+        return f"{self._base.removesuffix('/v1')}/{version}{path}"
 
     def record(
         self, source: str, err: BaseException, status: int | None = None
@@ -224,13 +232,14 @@ class MistralClient:
         *,
         timeout: float,
         source: str,
+        api_version: str = "v1",
         multipart: bool = False,
         data_factory: Callable[[], Any] | None = None,
         log_context: str = "",
         log_level: int = logging.ERROR,
         **kwargs: Any,
     ) -> AsyncIterator[Any]:
-        """Send a request to ``MISTRAL_API_BASE + path`` and yield the response.
+        """Send a request to the region's base URL + *path* and yield the response.
 
         Use as ``async with client.request(...) as resp:``. *multipart* sends
         only the Authorization header (aiohttp sets the multipart
@@ -238,8 +247,9 @@ class MistralClient:
         that can only be sent once (``aiohttp.FormData``). *log_context*
         (e.g. the model or voice) is added to the log line of an error
         status; *log_level* is the level of that line and of network failures.
+        *api_version* changes only the version path, keeping the same host.
         """
-        url = f"{MISTRAL_API_BASE}{path}"
+        url = self._api_url(path, api_version)
         headers = self._auth if multipart else self._json_headers
         status: int | None = None
         try:
@@ -341,12 +351,18 @@ class MistralClient:
             data_factory=data_factory,
         )
 
-    async def list_voices(self, offset: int, limit: int) -> dict[str, Any]:
-        """One page of the account's voices."""
+    async def list_voices(
+        self, page_token: str | None, page_size: int
+    ) -> dict[str, Any]:
+        """One cursor-paginated page of preset and custom voices (v2 API)."""
+        params: dict[str, str | int] = {"page_size": page_size, "type": "all"}
+        if page_token is not None:
+            params["page_token"] = page_token
         async with self.request(
             "get",
             "/audio/voices",
-            params={"limit": limit, "offset": offset},
+            api_version="v2",
+            params=params,
             timeout=10,
             source="tts",
             # A failed fetch is not fatal: the last good list stays.
@@ -367,16 +383,16 @@ class MistralClient:
 
     @staticmethod
     async def validate_key(
-        session: aiohttp.ClientSession, api_key: str
+        session: aiohttp.ClientSession, api_key: str, region: str | None = None
     ) -> tuple[str | None, str]:
-        """Check an API key before an entry (or its client) exists.
+        """Check an API key on *region*'s host before an entry (or its client) exists.
 
         Returns ``(None, "")`` when valid, else ``("invalid_auth" |
         "cannot_connect", detail)``; the detail never contains the key.
         """
         try:
             async with session.get(
-                f"{MISTRAL_API_BASE}/models",
+                f"{api_base(region)}/models",
                 headers={"Authorization": f"Bearer {api_key}"},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:

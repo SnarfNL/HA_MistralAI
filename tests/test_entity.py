@@ -55,8 +55,8 @@ async def test_conversation_device_model_follows_options(
         for d in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
     }
     assert models[f"{entry.entry_id}_conversation"] == "ministral-8b-latest"
-    assert models[f"{entry.entry_id}_stt"] == "voxtral-mini-latest"
-    assert models[f"{entry.entry_id}_tts"] == "voxtral-mini-tts-2603"
+    assert models[f"{entry.entry_id}_stt"] == "voxtral-mini-transcribe-3-0"
+    assert models[f"{entry.entry_id}_tts"] == "voxtral-mini-tts-3-0"
 
 
 EXPECTED_ENTITY_IDS = {

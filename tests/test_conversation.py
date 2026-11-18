@@ -14,11 +14,41 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from custom_components.mistral_conversation.conversation import (
+    _assistant_content,
     _async_stream_delta,
     _format_tool,
+    _reasoning_chunk,
     _sanitize,
     _to_mistral_id,
 )
+
+
+class AssistantContentTests(unittest.TestCase):
+    """The reasoning of an earlier turn is replayed to Mistral (#93)."""
+
+    def test_plain_text_without_reasoning(self) -> None:
+        self.assertEqual(_assistant_content("Hallo", None), "Hallo")
+
+    def test_reasoning_comes_before_the_text(self) -> None:
+        native = _reasoning_chunk("Ich überlege")
+        self.assertEqual(
+            _assistant_content("Hallo", native),
+            [native, {"type": "text", "text": "Hallo"}],
+        )
+
+    def test_reasoning_without_text_is_sent_alone(self) -> None:
+        native = _reasoning_chunk("Ich überlege")
+        self.assertEqual(_assistant_content("", native), [native])
+
+    def test_native_data_of_another_kind_is_ignored(self) -> None:
+        for native in (
+            object(),
+            {"type": "other"},
+            {"type": "thinking", "thinking": "not a list"},
+            "thinking",
+        ):
+            with self.subTest(native=native):
+                self.assertEqual(_assistant_content("Hallo", native), "Hallo")
 
 
 class SanitizeTests(unittest.TestCase):
@@ -264,6 +294,91 @@ class AsyncStreamDeltaTests(unittest.IsolatedAsyncioTestCase):
             out,
             [{"role": "assistant"}, {"content": "Hello"}, {"content": " world"}],
         )
+
+    async def test_reasoning_is_kept_apart_and_only_the_answer_is_spoken(
+        self,
+    ) -> None:
+        """A reasoning model streams ``delta.content`` as a list of chunks (#93):
+        the thinking is never spoken. It is handed over once as ``native`` so it
+        can be replayed to Mistral on the next request."""
+
+        def think(text: str) -> dict[str, Any]:
+            return {
+                "type": "thinking",
+                "thinking": [{"type": "text", "text": text}],
+                "closed": True,
+            }
+
+        chunks = [
+            # While thinking: a list with one thinking chunk.
+            _data_frame(_content_delta([think("Der Benutzer fragt")])),
+            _data_frame(_content_delta([think(" nach dem Wetter")])),
+            # The transition: a closing thinking chunk and the first answer text.
+            _data_frame(
+                _content_delta([think("."), {"type": "text", "text": "Heute "}])
+            ),
+            # Afterwards: a plain string again.
+            _data_frame(_content_delta("ist es sonnig.")),
+            b"data: [DONE]\n\n",
+        ]
+        out = await self._collect(_FakeResponse(chunks))
+        self.assertEqual(
+            out,
+            [
+                {"role": "assistant"},
+                {"native": _reasoning_chunk("Der Benutzer fragt nach dem Wetter.")},
+                {"content": "Heute "},
+                {"content": "ist es sonnig."},
+            ],
+        )
+
+    async def test_reasoning_is_handed_over_before_a_tool_call(self) -> None:
+        thinking = [{"type": "thinking", "thinking": [{"type": "text", "text": "Ich"}]}]
+        chunks = [
+            _data_frame(_content_delta(thinking)),
+            _data_frame(
+                _tool_delta(
+                    call_id="c1", name="HassTurnOn", args="{}", finish_reason="tool_calls"
+                )
+            ),
+            b"data: [DONE]\n\n",
+        ]
+        out = await self._collect(_FakeResponse(chunks))
+        self.assertEqual(
+            [next(iter(delta)) for delta in out], ["role", "native", "tool_calls"]
+        )
+        self.assertEqual(out[1]["native"], _reasoning_chunk("Ich"))
+
+    async def test_a_stream_with_only_reasoning_still_hands_it_over(self) -> None:
+        thinking = [{"type": "thinking", "thinking": [{"type": "text", "text": "Hm"}]}]
+        chunks = [_data_frame(_content_delta(thinking)), b"data: [DONE]\n\n"]
+        out = await self._collect(_FakeResponse(chunks))
+        self.assertEqual(out, [{"role": "assistant"}, {"native": _reasoning_chunk("Hm")}])
+
+    async def test_native_is_sent_once_per_message(self) -> None:
+        """HA raises when ``native`` is set twice for one message."""
+        thinking = [{"type": "thinking", "thinking": [{"type": "text", "text": "a"}]}]
+        chunks = [
+            _data_frame(_content_delta(thinking)),
+            _data_frame(_content_delta("eins")),
+            _data_frame(_content_delta(thinking)),
+            _data_frame(_content_delta("zwei")),
+            b"data: [DONE]\n\n",
+        ]
+        out = await self._collect(_FakeResponse(chunks))
+        self.assertEqual(sum("native" in delta for delta in out), 1)
+
+    async def test_content_that_is_not_text_is_ignored(self) -> None:
+        chunks = [
+            _data_frame(_content_delta([{"type": "image_url", "image_url": "x"}])),
+            _data_frame(_content_delta([{"type": "text", "text": 5}, "oops", None])),
+            _data_frame(_content_delta(None)),
+            _data_frame(_content_delta([])),
+            _data_frame(_content_delta("ok")),
+            b"data: [DONE]\n\n",
+        ]
+        out = await self._collect(_FakeResponse(chunks))
+        self.assertEqual(out, [{"role": "assistant"}, {"content": "ok"}])
 
     async def test_done_terminates(self) -> None:
         chunks = [
