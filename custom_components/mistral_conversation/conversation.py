@@ -327,6 +327,27 @@ def _convert_chat_log_to_messages(
 # "can only concatenate str (not list)" inside chat_log.
 # ---------------------------------------------------------------------------
 
+def _content_text(content: Any) -> str:
+    """Return the spoken text of a streamed ``delta.content``.
+
+    Usually a string. A model that reasons (for example Mistral Large 4) sends
+    a list of chunks instead: ``{"type": "thinking", ...}`` holds the reasoning
+    and ``{"type": "text", "text": ...}`` the answer. Only the answer is kept;
+    the reasoning must never reach the chat log or the speech output.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            chunk.get("text", "")
+            for chunk in content
+            if isinstance(chunk, dict)
+            and chunk.get("type") == "text"
+            and isinstance(chunk.get("text"), str)
+        )
+    return ""
+
+
 async def _async_stream_delta(
     resp: aiohttp.ClientResponse,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
@@ -387,8 +408,9 @@ async def _async_stream_delta(
                 delta = choice.get("delta", {})
 
                 # Yield text delta — always a separate dict, never mixed with tool_calls
-                if delta.get("content"):
-                    yield {"content": str(delta["content"])}
+                text = _content_text(delta.get("content"))
+                if text:
+                    yield {"content": text}
 
                 # Accumulate streaming tool call fragments
                 if delta.get("tool_calls"):
