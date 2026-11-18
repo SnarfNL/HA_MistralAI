@@ -554,7 +554,9 @@ class MistralConversationEntity(MistralEntity, ConversationEntity):
 
         # Web search needs an agent-capable model — it is only reachable through
         # the Conversations API.
-        web_search_available = web_search and supports_web_search(model)
+        web_search_available = web_search and supports_web_search(
+            model, self._runtime.client.region
+        )
 
         # Trigger phrases, when configured, are leading: a match goes straight to
         # the Conversations API and a non-match skips web search for this turn. An empty

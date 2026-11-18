@@ -13,6 +13,9 @@ CONF_WEB_SEARCH = "web_search"
 CONF_WEB_SEARCH_MODE = "web_search_mode"
 CONF_WEB_SEARCH_TRIGGER = "web_search_trigger"
 CONF_TTS_MODE = "tts_mode"
+# Lives in entry.data (next to the API key), not in the options: it decides which
+# host validates the key.
+CONF_API_REGION = "api_region"
 # Note: device control uses HA's native CONF_LLM_HASS_API from homeassistant.const
 
 # tts_mode values
@@ -107,8 +110,16 @@ AGENT_CAPABLE_MODELS = [
 ]
 
 
-def supports_web_search(model: str) -> bool:
-    """True when *model* can use web search (Agents/Conversations API)."""
+def supports_web_search(model: str, region: str | None = None) -> bool:
+    """True when *model* can use web search (Agents/Conversations API).
+
+    Web search is treated as unavailable on the regional endpoints until
+    ``POST /v1/conversations`` has been verified there: Mistral's docs say
+    nothing about it, and sending it to the global host instead would defeat
+    the point of choosing a region.
+    """
+    if region not in (None, REGION_GLOBAL):
+        return False
     return any(model.startswith(m) for m in AGENT_CAPABLE_MODELS)
 
 # ---------------------------------------------------------------------------
@@ -154,6 +165,25 @@ TTS_INTER_SENTENCE_SILENCE_BYTES = 14_400
 # API
 # ---------------------------------------------------------------------------
 MISTRAL_API_BASE = "https://api.mistral.ai/v1"
+
+# Regional inference (https://docs.mistral.ai/inference/regional-inference):
+# 1.1x the list price, only models hosted in that region, and no Agents, Batch
+# or Files API.
+REGION_GLOBAL = "global"
+REGION_EU = "eu"
+REGION_US = "us"
+API_REGIONS = [REGION_GLOBAL, REGION_EU, REGION_US]
+DEFAULT_API_REGION = REGION_GLOBAL
+REGION_BASES = {
+    REGION_GLOBAL: MISTRAL_API_BASE,
+    REGION_EU: "https://api.eu.mistral.ai/v1",
+    REGION_US: "https://api.us.mistral.ai/v1",
+}
+
+
+def api_base(region: str | None) -> str:
+    """Base URL for *region*; a missing or unknown region means global."""
+    return REGION_BASES.get(region or DEFAULT_API_REGION, MISTRAL_API_BASE)
 
 # Max tool-call round-trips to prevent infinite loops
 MAX_TOOL_ITERATIONS = 10

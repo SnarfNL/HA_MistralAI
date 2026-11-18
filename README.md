@@ -117,6 +117,14 @@ This integration makes **Mistral AI** available as a fully-featured conversation
 2. Search for **Mistral AI Conversation**
 3. Enter your API key → **Submit**
 
+**Region (optional):** next to the API key you can choose where Mistral processes your
+requests: *Global* (`api.mistral.ai`, the default), *EU* (`api.eu.mistral.ai`) or *US*
+(`api.us.mistral.ai`). The EU and US options use Mistral's
+[regional inference](https://docs.mistral.ai/inference/regional-inference): it costs 1.1×
+the normal price, only offers models hosted in that region (the list can differ), and
+**web search is not available** on it. Change it later with **Reconfigure** (⋮ menu of
+the integration).
+
 ### Selecting as voice assistant
 
 1. **Settings → Voice Assistants** → click your assistant
