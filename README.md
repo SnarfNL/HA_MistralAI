@@ -27,6 +27,16 @@
 
 ---
 
+## Support
+
+If this integration is useful to you, you can support its development with a coffee. Thank you!
+
+<a href="https://buymeacoffee.com/SnarfNL" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
 ## Table of Contents
 
 1. [About](#about)
@@ -493,16 +503,6 @@ A: Mistral AI processes requests via their servers. See their [privacy policy](h
 ## Release Notes
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
----
-
-## Support
-
-If this integration is useful to you, you can support its development with a coffee. Thank you!
-
-<a href="https://buymeacoffee.com/SnarfNL" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
