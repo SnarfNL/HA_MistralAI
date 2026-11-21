@@ -18,7 +18,11 @@ DEFAULT_TTL_SECONDS = 300
 DEFAULT_MAX_ITEMS = 50
 
 # Generic on purpose: no entity list, date or user prompt ever ends up here.
+# Mistral's Conversations API rejects forced tool_choice values for its hosted
+# web_search tool, so explicitly require the search in the instructions.
 WEB_SEARCH_INSTRUCTIONS = (
+    "You have no knowledge of current events. Always use the web search tool "
+    "before you answer, even if you think you know the answer. "
     "Answer the question factually and concisely in one or two short sentences "
     "suited to being read aloud. Do not use lists, markdown or citations."
 )

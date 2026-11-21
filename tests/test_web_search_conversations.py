@@ -87,14 +87,16 @@ class BuildPayloadTests(unittest.TestCase):
         self.assertTrue(build_conversation_payload("m", "q", None, store=True)["store"])
         self.assertFalse(build_conversation_payload("m", "q", None, store=False)["store"])
 
-    def test_instructions_are_generic_plus_language(self) -> None:
+    def test_instructions_require_search_and_add_language(self) -> None:
         p = build_conversation_payload("m", "q", "nl", store=False)
         self.assertTrue(p["instructions"].startswith(WEB_SEARCH_INSTRUCTIONS))
+        self.assertIn("Always use the web search tool", p["instructions"])
         self.assertIn("'nl'", p["instructions"])
 
-    def test_no_language_leaves_instructions_generic(self) -> None:
+    def test_no_language_leaves_required_search_instructions_unchanged(self) -> None:
         p = build_conversation_payload("m", "q", None, store=False)
         self.assertEqual(p["instructions"], WEB_SEARCH_INSTRUCTIONS)
+        self.assertNotIn("completion_args", p)
 
 
 if __name__ == "__main__":

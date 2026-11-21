@@ -6,6 +6,7 @@ Versions before 2026.05 used `vX.Y.Z` numbering; from 2026.05 on the format is `
 
 
 ### Unreleased
+- **Fixed:** web-search turns now explicitly tell Mistral to run the hosted search tool before answering. Mistral's Conversations API rejects forced `tool_choice` values for `web_search`; the stricter instruction is the probe variant that consistently executed and billed the search. Refs #88.
 - **Docs:** the README model table no longer has a *Free tier* column: the free API tier no longer exists.
 - **Docs:** the README now opens with a notice that Mistral's Free plan has no API access since November 2026. On that plan every request fails with HTTP 429 (code 1300), which the integration reports as *"temporarily overloaded"*. A new section, *Mistral account and billing*, gives the steps: credits, pay-as-you-go, a key test, and *Reconfigure*. It also explains why the Limits page and the Studio playground look fine anyway.
 - **Fixed:** since November 2026 Mistral's Free plan has no API access: every request fails with HTTP 429 (code 1300), which the integration reported only as "temporarily overloaded" and, for speech, "Check the voice ID". Closes #100.
