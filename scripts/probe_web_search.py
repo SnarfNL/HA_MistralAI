@@ -39,12 +39,13 @@ KEY = os.environ.get("MISTRAL_API_KEY", "")
 MODEL = os.environ.get("PROBE_MODEL", "mistral-medium-latest")
 QUESTION = "What is today's top headline on bbc.com/news? Name the headline."
 
-# Same text as the integration's WEB_SEARCH_INSTRUCTIONS.
+# Previous integration text, kept as the control case for issue #88.
 GENERIC_INSTRUCTIONS = (
     "Answer the question factually and concisely in one or two short sentences "
     "suited to being read aloud. Do not use lists, markdown or citations."
 )
 STRICT_INSTRUCTIONS = (
+    # Same text as the integration's WEB_SEARCH_INSTRUCTIONS.
     "You have no knowledge of current events. Always use the web search tool "
     "before you answer, even if you think you know the answer. "
     + GENERIC_INSTRUCTIONS
